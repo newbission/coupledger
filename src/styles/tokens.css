@@ -1,0 +1,107 @@
+/* ===== coupledger 테마 토큰 =====
+   하나의 레이아웃 + data-theme로 스킨 교체. 새 테마는 토큰 세트만 추가. */
+
+:root {
+  --font: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+  --maxw: 1080px;
+}
+
+/* ---------- 따뜻함 (기본) ---------- */
+html[data-theme="warm"] {
+  --bg: #FFFBF5;
+  --surface: #FFFFFF;
+  --surface-2: #FFF6EE;
+  --ink: #3A322B;
+  --sub: #9C9081;
+  --faint: #C9BDB0;
+  --line: #EFE7DC;
+
+  --accent: #FF8A7A;
+  --accent-deep: #F2705C;
+  --accent2: #7BA88C;
+  --accent2-deep: #5E9374;
+  --accent-soft: #FFEDE6;
+
+  --shared: #7BA88C;        /* 공용 색 */
+  --wm-l: #F2705C;          /* 워드마크 l */
+  --wm-e: #5E9374;          /* 워드마크 e */
+
+  --ok: #4FAE7A;
+  --warn: #E0A458;
+  --danger: #E5705C;
+
+  /* 멤버 팔레트 */
+  --m1: #5B8DEF; --m2: #FF8A7A; --m3: #E0A458; --m4: #9B8CFF; --m5: #46B5A6; --m6: #EC7FB0;
+
+  --radius: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --shadow: 0 6px 24px rgba(120, 90, 60, .07);
+  --shadow-lg: 0 12px 36px rgba(120, 90, 60, .10);
+}
+
+/* ---------- 미니멀 (토스풍) ---------- */
+html[data-theme="minimal"] {
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-2: #F9FAFB;
+  --ink: #191F28;
+  --sub: #6B7684;
+  --faint: #B0B8C1;
+  --line: #E5E8EB;
+
+  --accent: #3182F6;
+  --accent-deep: #1B64DA;
+  --accent2: #00C2B3;
+  --accent2-deep: #00A99C;
+  --accent-soft: #EAF2FE;
+
+  --shared: #3182F6;
+  --wm-l: #3182F6;
+  --wm-e: #0FA99B;
+
+  --ok: #15B86B;
+  --warn: #F5A623;
+  --danger: #F0556B;
+
+  --m1: #3182F6; --m2: #FF6B6B; --m3: #00C2B3; --m4: #9B7BFF; --m5: #F5A623; --m6: #EC6FA6;
+
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --shadow: 0 4px 16px rgba(0, 27, 55, .06);
+  --shadow-lg: 0 10px 30px rgba(0, 27, 55, .10);
+}
+
+/* ---------- 슬레이트 (대시보드) ---------- */
+html[data-theme="slate"] {
+  --bg: #F4F5F8;
+  --surface: #FFFFFF;
+  --surface-2: #F1F3F8;
+  --ink: #0F172A;
+  --sub: #64748B;
+  --faint: #94A3B8;
+  --line: #E2E8F0;
+
+  --accent: #6366F1;
+  --accent-deep: #4F46E5;
+  --accent2: #10B981;
+  --accent2-deep: #059669;
+  --accent-soft: #ECECFE;
+
+  --shared: #6366F1;
+  --wm-l: #6366F1;
+  --wm-e: #0E9F6E;
+
+  --ok: #10B981;
+  --warn: #F59E0B;
+  --danger: #EF4444;
+
+  --m1: #6366F1; --m2: #10B981; --m3: #F59E0B; --m4: #EC4899; --m5: #06B6D4; --m6: #8B5CF6;
+
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --shadow: 0 6px 20px rgba(15, 23, 42, .08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, .12);
+}

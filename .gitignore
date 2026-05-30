@@ -1,0 +1,22 @@
+# 민감 정보 — 실제 카드 이용내역 (절대 커밋 금지)
+references/
+
+# 디자인 목업 (실제 거래 샘플이 포함되어 비공개로 둠 — 로컬 검토용)
+mockups/
+
+# 의존성 / 빌드 산출물
+node_modules/
+dist/
+.vite/
+
+# 환경변수 / API 키 (추후 AI·구글시트 연동 시 사용)
+.env
+.env.*
+!.env.example
+
+# OS / 에디터
+.DS_Store
+*.log
+.idea/
+.vscode/
+__sample.xlsx

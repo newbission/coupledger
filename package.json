@@ -1,0 +1,19 @@
+{
+  "name": "coupledger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "함께(또는 혼자) 쓰는 생활비 카드 정산 · 가계부",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^6.0.7"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
