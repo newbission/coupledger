@@ -42,10 +42,8 @@ const HISTORY_KEY = 'coupledger.history.v1';
 // ---------- 기본값 ----------
 
 function defaultMembers(): Member[] {
-  return [
-    { id: uid(), name: '나', colorVar: 'm1', isPayer: true, weight: 1 },
-    { id: uid(), name: '여자친구', colorVar: 'm2', isPayer: false, weight: 1 },
-  ];
+  // 첫 멤버 1명만 — 나머지는 온보딩/설정에서 직접 추가(이름 가정 안 함).
+  return [{ id: uid(), name: '나', colorVar: 'm1', isPayer: true, weight: 1 }];
 }
 
 export function defaultConfig(): AppConfig {
@@ -298,6 +296,60 @@ export function toggleExcluded(id: string): void {
   notify();
 }
 
+/** 거래를 직접 추가. 업로드 내역이 없으면 빈 내역을 만들어 시작(엑셀 없이도 가계부 가능). */
+export function addManualItem(data: {
+  date: string;
+  merchant: string;
+  amount: number;
+  category: string | null;
+  assign: Assignment;
+}): void {
+  let imp = state.session.import;
+  if (!imp) {
+    imp = {
+      source: state.config.defaultSource,
+      periodLabel: periodOf(data.date),
+      periodStart: data.date,
+      periodEnd: data.date,
+      rawCount: 0,
+      fileName: '직접 입력',
+      items: [],
+    };
+    state.session.import = imp;
+  }
+  const item: LineItem = {
+    id: uid(),
+    date: data.date,
+    merchant: data.merchant,
+    gross: data.amount,
+    canceledAmount: 0,
+    net: data.amount,
+    installment: false,
+    installmentMonths: 0,
+    cancel: 'none',
+    excluded: false,
+    category: data.category,
+    categoryAuto: false,
+    assign: data.assign,
+    splits: null,
+    manual: true,
+  };
+  imp.items.unshift(item);
+  if (data.date < imp.periodStart) imp.periodStart = data.date;
+  if (data.date > imp.periodEnd) imp.periodEnd = data.date;
+  imp.periodLabel = periodOf(imp.periodStart);
+  if (data.category) learn(data.merchant, data.category, data.assign);
+  notify();
+}
+
+/** 항목 삭제(주로 직접 추가 항목). */
+export function removeItem(id: string): void {
+  const imp = state.session.import;
+  if (!imp) return;
+  imp.items = imp.items.filter((it) => it.id !== id);
+  notify();
+}
+
 // ---------- 정산 ----------
 
 export function getSettlement(): SettlementResult {
@@ -393,6 +445,7 @@ export function saveCurrentToHistory(mode: 'add' | 'replace' = 'add'): void {
     settlement,
     memberNames,
     itemCount,
+    snapshot: structuredClone(imp),
   };
 
   if (mode === 'replace') {
@@ -410,6 +463,15 @@ export function findHistoryByPeriod(label: string): HistoryEntry | null {
 export function deleteHistory(id: string): void {
   history = history.filter((h) => h.id !== id);
   persistHistory();
+  notify();
+}
+
+/** 저장된 기록을 현재 세션으로 불러오기(복원). 스냅샷을 그대로 사용(자동제안 재적용 안 함). */
+export function loadHistoryEntry(id: string): void {
+  const e = history.find((h) => h.id === id);
+  if (!e || !e.snapshot) return;
+  state.session.import = structuredClone(e.snapshot);
+  state.route = 'app';
   notify();
 }
 

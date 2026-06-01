@@ -104,3 +104,35 @@ export function downloadFile(name: string, content: string, mime: string): void 
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** 화면 하단에 잠깐 떴다 사라지는 토스트(저장됨 등 피드백). 자체 스타일이라 CSS 불필요. */
+export function toast(message: string, kind: 'ok' | 'info' = 'ok'): void {
+  const t = el('div', { class: 'toast', text: message });
+  Object.assign(t.style, {
+    position: 'fixed',
+    left: '50%',
+    bottom: '28px',
+    transform: 'translateX(-50%) translateY(10px)',
+    background: kind === 'ok' ? 'var(--accent-deep, #333)' : 'var(--ink, #333)',
+    color: '#fff',
+    padding: '11px 18px',
+    borderRadius: '999px',
+    fontSize: '13.5px',
+    fontWeight: '700',
+    boxShadow: 'var(--shadow-lg, 0 12px 32px rgba(0,0,0,.18))',
+    zIndex: '2000',
+    opacity: '0',
+    transition: 'opacity .2s ease, transform .2s ease',
+    pointerEvents: 'none',
+  } as Partial<CSSStyleDeclaration>);
+  document.body.append(t);
+  requestAnimationFrame(() => {
+    t.style.opacity = '1';
+    t.style.transform = 'translateX(-50%) translateY(0)';
+  });
+  setTimeout(() => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(-50%) translateY(10px)';
+    setTimeout(() => t.remove(), 240);
+  }, 1900);
+}

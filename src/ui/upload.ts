@@ -77,15 +77,16 @@ function dropzone(): HTMLElement {
         if (f) void handleFile(f);
       },
     },
-    uploadIcon(28),
-    el('div', { class: 'upload-done', style: { fontWeight: '800' } },
-      '여기에 .xlsx 파일을 끌어다 놓거나 클릭'),
-    el('div', { class: 'file-meta' },
-      '삼성카드 이용내역(.xlsx) 지원 · ',
-      el('b', { text: '다른 카드/은행 곧 추가' }),
+    uploadIcon(20),
+    el('div', { class: 'dropzone-text' },
+      el('span', { class: 'dropzone-title', text: '.xlsx 파일을 끌어다 놓거나 클릭' }),
+      el('span', { class: 'dropzone-meta' },
+        '삼성카드 이용내역 지원 · ',
+        el('b', { text: '다른 카드/은행 곧 추가' }),
+      ),
     ),
   );
-  // .upload-done 의 ok-dot 가상요소가 어울리지 않으므로 드롭존 안내문은 일반 텍스트로.
+  // .upload-done 의 ok-dot 가상요소가 어울리지 않으므로 드롭존 안내문은 일반 텍스트(가로 1줄 컴팩트).
   return el('div', { class: 'upload', style: { padding: '0', border: 'none', background: 'transparent', boxShadow: 'none' } }, zone);
 }
 

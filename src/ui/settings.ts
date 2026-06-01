@@ -13,7 +13,7 @@
 //   색/여백/라운드는 tokens.css 변수만 사용(하드코딩 색 없음).
 //   멤버 색 점은 swatch에 var(--m1..--m6)를 그대로 비춘다.
 import type { SourceId, ThemeId } from '../types';
-import { el, downloadFile } from '../util';
+import { el, downloadFile, toast } from '../util';
 import {
   getState,
   setRoute,
@@ -38,13 +38,6 @@ const THEMES: { id: ThemeId; label: string; desc: string }[] = [
 ];
 
 const SOURCES: { id: SourceId; label: string }[] = [{ id: 'samsung', label: '삼성카드' }];
-
-/** 1.2초 후 사라지는 토스트(.toast 는 base.css 정의). */
-function toast(msg: string): void {
-  const t = el('div', { class: 'toast', role: 'status', text: msg });
-  document.body.append(t);
-  setTimeout(() => t.remove(), 2400);
-}
 
 /** 인라인 SVG 헬퍼(currentColor stroke). el() 은 HTML 전용이라 직접 생성. */
 function svg(size: number, inner: string, strokeWidth = 2): SVGElement {
@@ -83,7 +76,10 @@ function colorPicker(memberId: string, current: string): HTMLElement {
           ? '0 0 0 2px var(--surface) inset, 0 0 0 2px var(--accent)'
           : '0 0 0 3px var(--surface) inset',
       },
-      onClick: () => updateMember(memberId, { colorVar: slot }),
+      onClick: () => {
+        updateMember(memberId, { colorVar: slot });
+        toast('저장됨');
+      },
     });
     wrap.append(dot);
   }
@@ -105,6 +101,7 @@ function memberCard(memberId: string): HTMLElement {
     onChange: (e: Event) => {
       const v = (e.target as HTMLInputElement).value.trim();
       updateMember(m.id, { name: v || m.name });
+      toast('저장됨');
     },
   });
 
@@ -118,7 +115,10 @@ function memberCard(memberId: string): HTMLElement {
         class: 'btn btn-ghost btn-sm',
         type: 'button',
         text: '결제자로',
-        onClick: () => setPayer(m.id),
+        onClick: () => {
+          setPayer(m.id);
+          toast('결제자가 바뀌었어요');
+        },
       });
 
   // 삭제.
@@ -130,7 +130,10 @@ function memberCard(memberId: string): HTMLElement {
     disabled: !canRemove,
     style: canRemove ? null : { opacity: '.4', cursor: 'not-allowed' },
     onClick: () => {
-      if (canRemove) removeMember(m.id);
+      if (canRemove) {
+        removeMember(m.id);
+        toast('멤버가 삭제됐어요');
+      }
     },
   });
 
@@ -146,6 +149,7 @@ function memberCard(memberId: string): HTMLElement {
       const raw = parseFloat((e.target as HTMLInputElement).value);
       const w = Number.isFinite(raw) && raw >= 0 ? raw : m.weight;
       updateMember(m.id, { weight: w });
+      toast('저장됨');
     },
   });
 
@@ -197,6 +201,7 @@ function memberSection(): HTMLElement {
     const v = addInput.value.trim();
     addMember(v);
     addInput.value = '';
+    toast('멤버 추가됨');
   };
   addInput.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -242,6 +247,7 @@ function generalSection(): HTMLElement {
     onChange: (e: Event) => {
       const v = (e.target as HTMLInputElement).value.trim();
       setConfig({ appLabel: v || 'coupledger' });
+      toast('저장됨');
     },
   });
 
@@ -252,6 +258,7 @@ function generalSection(): HTMLElement {
       value: config.defaultSource,
       onChange: (e: Event) => {
         setConfig({ defaultSource: (e.target as HTMLSelectElement).value as SourceId });
+        toast('저장됨');
       },
     },
     ...SOURCES.map((s) =>
@@ -306,6 +313,7 @@ function categorySection(): HTMLElement {
         const next = cats.slice();
         next[i] = v;
         setCats(next);
+        toast('저장됨');
       },
     });
     const del = el('button', {
@@ -318,6 +326,7 @@ function categorySection(): HTMLElement {
       onClick: () => {
         if (cats.length <= 1) return;
         setCats(cats.filter((_, j) => j !== i));
+        toast('카테고리가 삭제됐어요');
       },
     });
     list.append(el('div', { class: 'row', style: { gap: '8px' } }, input, del));
@@ -340,6 +349,7 @@ function categorySection(): HTMLElement {
     }
     setCats([...cats, v]);
     addInput.value = '';
+    toast('카테고리 추가됨');
   };
   addInput.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -385,7 +395,10 @@ function themeSwatch(t: { id: ThemeId; label: string; desc: string }): HTMLEleme
       type: 'button',
       'aria-pressed': on ? 'true' : 'false',
       'data-theme': t.id,
-      onClick: () => setTheme(t.id),
+      onClick: () => {
+        setTheme(t.id);
+        toast('테마 적용됨');
+      },
     },
     el(
       'span',
@@ -529,9 +542,17 @@ export function Settings(): HTMLElement {
     el('span', { class: 'sec-desc', text: '멤버 · 카테고리 · 테마 · 데이터를 관리해요' }),
   );
 
+  const saveHint = el(
+    'p',
+    { class: 'save-hint', role: 'note' },
+    svg(13, '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
+    '변경하면 자동으로 저장돼요',
+  );
+
   const panel = el(
     'div',
     { class: 'settings' },
+    saveHint,
     memberSection(),
     generalSection(),
     categorySection(),

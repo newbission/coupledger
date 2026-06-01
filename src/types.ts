@@ -79,6 +79,8 @@ export interface LineItem {
   assign: Assignment;
   /** 카테고리 분할(합계 = net). 없으면 null */
   splits: Split[] | null;
+  /** 사용자가 직접 추가한 항목(엑셀 아님) */
+  manual?: boolean;
 }
 
 export interface ImportResult {
@@ -124,6 +126,8 @@ export interface HistoryEntry {
   settlement: SettlementResult;
   memberNames: Record<string, string>;
   itemCount: number;
+  /** 전체 데이터 스냅샷 — 불러오기(복원)용 */
+  snapshot: ImportResult;
 }
 
 export interface Session {

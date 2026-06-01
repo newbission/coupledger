@@ -9,8 +9,8 @@
 //   - 테마 미리보기 점은 swatch 자체에 data-theme를 걸어 각 테마의
 //     var(--accent)/var(--accent2)/var(--accent2-deep)을 그대로 비추므로
 //     하드코딩 색을 쓰지 않는다.
-import type { ThemeId } from '../types';
-import { el } from '../util';
+import type { SourceId, ThemeId } from '../types';
+import { el, toast } from '../util';
 import { iconEl, wordmarkEl } from '../brand';
 import {
   addMember,
@@ -27,6 +27,15 @@ const THEMES: { id: ThemeId; label: string; desc: string }[] = [
   { id: 'warm', label: '따뜻함', desc: '크림 · 코랄' },
   { id: 'minimal', label: '미니멀', desc: '화이트 · 블루' },
   { id: 'slate', label: '슬레이트', desc: '쿨 · 인디고' },
+];
+
+// 카드 선택 — 지금은 삼성카드만 지원, 나머지는 '곧'(비활성) 안내.
+// id가 SourceId인 것만 선택 가능(현재 'samsung').
+const CARDS: { id: SourceId | string; label: string; ready: boolean }[] = [
+  { id: 'samsung', label: '삼성카드', ready: true },
+  { id: 'kb', label: 'KB국민카드', ready: false },
+  { id: 'hyundai', label: '현대카드', ready: false },
+  { id: 'shinhan', label: '신한카드', ready: false },
 ];
 
 /** 첫 글자(이니셜) — 아바타 점은 색만 쓰므로 칩 텍스트에만 이름 사용 */
@@ -115,6 +124,9 @@ export function Onboarding(): HTMLElement {
   const { config } = getState();
   const solo = config.members.length <= 1;
 
+  // 시작하기 전까지 보관하는 임시 선택값(아직 store 미반영).
+  const draft: { defaultSource: SourceId } = { defaultSource: config.defaultSource };
+
   // ---- 환영 + 락업 ----
   const hero = el(
     'div',
@@ -150,6 +162,51 @@ export function Onboarding(): HTMLElement {
       'div',
       { style: { color: 'var(--accent2-deep)', fontWeight: '700' } },
       '커플을 위해 만들었지만 — 가족도, 룸메도, 혼자여도, 누구나.',
+    ),
+  );
+
+  // ---- 카드 선택 ----
+  const cardOpts = CARDS.map((c) => {
+    const on = c.ready && draft.defaultSource === c.id;
+    const opt = el(
+      'button',
+      {
+        class:
+          'card-opt' + (c.ready ? (on ? ' is-on' : '') : ' is-soon'),
+        type: 'button',
+        disabled: !c.ready,
+        'aria-pressed': on ? 'true' : 'false',
+        onClick: c.ready
+          ? () => {
+              draft.defaultSource = c.id as SourceId;
+              // 선택 상태 토글(재렌더 없이 클래스만 갱신).
+              for (const node of cardOpts) {
+                const isOn = node === opt;
+                node.classList.toggle('is-on', isOn);
+                node.setAttribute('aria-pressed', isOn ? 'true' : 'false');
+              }
+            }
+          : undefined,
+      },
+      el('span', { text: c.label }),
+      c.ready ? null : el('span', { class: 'muted', style: { fontSize: '10.5px', fontWeight: '700' }, text: '곧' }),
+    );
+    return opt;
+  });
+
+  const cardSection = el(
+    'div',
+    { class: 'field', style: { marginTop: '6px' } },
+    el(
+      'div',
+      { class: 'row', style: { gap: '8px' } },
+      el('label', { style: { margin: '0' } }, '카드 선택'),
+      el('span', { class: 'muted', style: { fontSize: '11.5px', fontWeight: '600' }, text: '이용내역을 올릴 카드 · 더 많은 카드는 곧' }),
+    ),
+    el(
+      'div',
+      { class: 'card-select', style: { marginTop: '4px' } },
+      ...cardOpts,
     ),
   );
 
@@ -193,6 +250,11 @@ export function Onboarding(): HTMLElement {
       el('label', { style: { margin: '0' } }, '멤버'),
       el('span', { class: 'muted', style: { fontSize: '11.5px', fontWeight: '600' }, text: '공용 지출을 함께 나눌 사람들 · 결제자 1명' }),
     ),
+    el(
+      'div',
+      { class: 'muted', style: { fontSize: '12px', marginTop: '2px' } },
+      '함께 쓰는 사람을 추가하세요(혼자면 그대로 두세요).',
+    ),
     el('div', { class: 'stack', style: { gap: '10px', marginTop: '4px' } }, ...config.members.map((m) => memberRow(m.id))),
     el(
       'div',
@@ -222,11 +284,22 @@ export function Onboarding(): HTMLElement {
       type: 'button',
       style: { width: '100%', marginTop: '18px', padding: '13px 16px', fontSize: '15px' },
       onClick: () => {
-        // 빈 이름 정리(혹시 모를 공백 이름 보정).
-        for (const m of config.members) {
-          if (!m.name.trim()) updateMember(m.id, { name: '멤버' });
+        // 이름 있는 멤버만 유지. 모두 비었으면 시작을 막고 안내.
+        const named = config.members.filter((m) => m.name.trim());
+        if (named.length === 0) {
+          toast('멤버 이름을 한 명 이상 입력하세요.', 'info');
+          return;
         }
-        setConfig({ onboarded: true });
+        // 이름 트림 + 결제자 보정(결제자가 빠졌으면 첫 멤버를 결제자로).
+        const members = named.map((m) => ({ ...m, name: m.name.trim() }));
+        if (!members.some((m) => m.isPayer)) members[0] = { ...members[0], isPayer: true };
+
+        setConfig({
+          onboarded: true,
+          theme: config.theme,
+          members,
+          defaultSource: draft.defaultSource,
+        });
         setRoute('app');
       },
     },
@@ -238,6 +311,7 @@ export function Onboarding(): HTMLElement {
     { class: 'onboarding' },
     hero,
     story,
+    cardSection,
     themeSection,
     memberSection,
     startBtn,

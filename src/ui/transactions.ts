@@ -10,13 +10,16 @@
 //                       기존 .split-row / .split-btn / .muted 토큰 클래스로 대체 구성하여 새 클래스 회피.
 // 위 외 모든 클래스는 base.css 정의 클래스(.txn-* / .seg* / .cat-* / .badge-* / .split-* 등)를 사용.
 
-import type { LineItem, Member, Split } from '../types';
-import { el, won, isShared, memberOf, shortDate } from '../util';
+import type { Assignment, LineItem, Member, Split } from '../types';
+import { el, won, isShared, memberOf, shortDate, todayISO, toast } from '../util';
 import {
   getState,
   setItemAssign,
   setItemCategory,
   setItemSplits,
+  addManualItem,
+  removeItem,
+  toggleExcluded,
 } from '../state/store';
 
 // ---------- 모듈 상태(스토어 재렌더 사이에 유지) ----------
@@ -27,6 +30,8 @@ let activeFilter: Filter = 'all';
 let searchText = '';
 /** 분할 패널이 펼쳐진 행 id 집합 */
 const expanded = new Set<string>();
+/** '직접 추가' 인라인 폼 펼침 여부(재렌더 사이 유지) */
+let manualFormOpen = false;
 
 // ---------- 분류 판정 헬퍼 ----------
 
@@ -454,13 +459,232 @@ function splitPanel(it: LineItem): HTMLElement {
   return panel;
 }
 
+// ---------- 직접 추가 폼 ----------
+
+/** 분류 세그먼트(공용 + 멤버) — 폼 전용. 외부 상태(value) 를 콜백으로 갱신. */
+function manualAssignSegment(
+  members: Member[],
+  current: Assignment,
+  onPick: (a: Assignment) => void,
+): HTMLElement {
+  const seg = el('div', { class: 'seg' });
+  const opts: Array<{ node: HTMLElement; match: () => boolean }> = [];
+
+  const sharedOpt = segOption(
+    '공',
+    isShared(current),
+    'shared',
+    true,
+    () => {},
+    false,
+  );
+  seg.append(sharedOpt);
+  opts.push({ node: sharedOpt, match: () => isShared(current) });
+
+  for (const m of members.slice(0, 4)) {
+    const opt = segOption(
+      initial(m.name),
+      memberOf(current) === m.id,
+      m.colorVar,
+      false,
+      () => {},
+      false,
+    );
+    seg.append(opt);
+    opts.push({ node: opt, match: () => memberOf(current) === m.id });
+  }
+
+  // 클릭은 여기서 위임 처리(세그 선택 + 즉시 on 상태 갱신).
+  function refresh(): void {
+    for (const o of opts) o.node.classList.toggle('is-on', o.match());
+  }
+  sharedOpt.addEventListener('click', (e) => {
+    e.preventDefault();
+    current = 'shared';
+    onPick(current);
+    refresh();
+  });
+  members.slice(0, 4).forEach((m, i) => {
+    opts[i + 1].node.addEventListener('click', (e) => {
+      e.preventDefault();
+      current = { member: m.id };
+      onPick(current);
+      refresh();
+    });
+  });
+
+  return seg;
+}
+
+function manualForm(members: Member[]): HTMLElement {
+  const { categories } = getState().config;
+
+  // 폼 내부 상태(제출 전까지 store 미변경).
+  let pick: Assignment = 'shared';
+
+  const dateInput = el('input', {
+    type: 'date',
+    class: 'manual-field',
+    value: todayISO(),
+    'aria-label': '일자',
+  }) as HTMLInputElement;
+
+  const merchantInput = el('input', {
+    type: 'text',
+    class: 'manual-field',
+    placeholder: '가맹점',
+    'aria-label': '가맹점',
+  }) as HTMLInputElement;
+
+  const amountInput = el('input', {
+    type: 'number',
+    class: 'manual-field num',
+    placeholder: '금액',
+    'aria-label': '금액',
+  }) as HTMLInputElement;
+
+  const catSelect = el(
+    'select',
+    { class: 'manual-field', 'aria-label': '카테고리' },
+    el('option', { value: '', selected: true }, '미분류'),
+    ...categories.map((c) => el('option', { value: c }, c)),
+  ) as HTMLSelectElement;
+
+  const seg = manualAssignSegment(members, pick, (a) => {
+    pick = a;
+  });
+
+  function submit(): void {
+    const date = dateInput.value || todayISO();
+    const merchant = merchantInput.value.trim();
+    const amount = Number(amountInput.value);
+    // 빈값 검증: 가맹점 + 유효한 양수 금액 필수.
+    if (!merchant || !Number.isFinite(amount) || amount <= 0) {
+      toast('가맹점과 금액을 입력하세요', 'info');
+      return;
+    }
+    // 폼 닫기/초기화 먼저 — addManualItem 의 notify() 가 곧바로 루트 재렌더하므로
+    // 그 전에 플래그를 내려야 새 목록이 닫힌 폼으로 그려진다.
+    manualFormOpen = false;
+    addManualItem({
+      date,
+      merchant,
+      amount,
+      category: catSelect.value || null,
+      assign: pick,
+    });
+    toast('추가됨');
+  }
+
+  const addBtn = el(
+    'button',
+    {
+      class: 'btn btn-primary btn-sm',
+      onClick: (e: Event) => {
+        e.preventDefault();
+        submit();
+      },
+    },
+    '추가',
+  );
+
+  const cancelBtn = el(
+    'button',
+    {
+      class: 'btn btn-ghost btn-sm',
+      onClick: (e: Event) => {
+        e.preventDefault();
+        manualFormOpen = false;
+        notifyRerender();
+      },
+    },
+    '취소',
+  );
+
+  // 가맹점에서 Enter → 추가 단축.
+  merchantInput.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') {
+      e.preventDefault();
+      submit();
+    }
+  });
+
+  return el(
+    'div',
+    { class: 'manual-form' },
+    dateInput,
+    merchantInput,
+    amountInput,
+    catSelect,
+    seg,
+    addBtn,
+    cancelBtn,
+  );
+}
+
+/** store.notify 가 루트 재렌더를 부르지만, 취소처럼 store 변경 없는 경우 직접 트리거가 필요.
+ *  여기선 TransactionList 호스트 섹션을 다시 만들 수 없으므로 setItemSplits 류가 아닌
+ *  로컬 in-place 토글로 처리한다(아래 toolbar 콜백에서 직접 재구성). */
+let notifyRerender: () => void = () => {};
+
+/** 마지막 셀: 분할 버튼 + 제외/복구 토글.
+ *  - 전체취소(cancel==='full')는 구조적 제외라 토글 불가(정산 제외 라벨만).
+ *  - 카드 항목(엑셀)은 수동 제외/복구 가능. 직접 추가 항목은 삭제로 처리하므로 토글 제외.
+ */
+function lastCell(it: LineItem, excluded: boolean): HTMLElement {
+  const wrap = el('div', { class: 'row', style: { gap: '6px' } });
+
+  if (it.cancel === 'full') {
+    // 전체취소: 토글 불가.
+    wrap.append(
+      el('span', { class: 'muted', style: { fontSize: '11px', fontWeight: '700' } }, '정산 제외'),
+    );
+    return wrap;
+  }
+
+  if (!excluded) {
+    wrap.append(splitButton(it));
+  } else {
+    wrap.append(
+      el('span', { class: 'muted', style: { fontSize: '11px', fontWeight: '700' } }, '정산 제외'),
+    );
+  }
+
+  // 직접 추가 항목은 × 삭제로 처리하므로 제외 토글 미표시.
+  if (!it.manual) {
+    wrap.append(
+      el(
+        'button',
+        {
+          class: ['exclude-toggle', it.excluded ? 'is-on' : ''].filter(Boolean).join(' '),
+          title: it.excluded ? '정산에 복구' : '정산에서 제외',
+          'aria-pressed': it.excluded ? 'true' : 'false',
+          onClick: (e: Event) => {
+            e.preventDefault();
+            // toggleExcluded 가 it.excluded 를 즉시 뒤집으므로 토스트 문구는 토글 전 값 기준.
+            const wasExcluded = it.excluded;
+            toggleExcluded(it.id);
+            toast(wasExcluded ? '복구됨' : '제외됨', 'info');
+          },
+        },
+        it.excluded ? '복구' : '제외',
+      ),
+    );
+  }
+
+  return wrap;
+}
+
 // ---------- 행(테이블 tr들) ----------
 
 function rowFor(it: LineItem, members: Member[]): HTMLElement[] {
   const excluded = it.excluded || it.cancel === 'full';
 
-  // 가맹점 셀: 이름 + 배지(부분취소/전체취소/할부).
+  // 가맹점 셀: 이름 + 배지(직접/부분취소/전체취소/할부).
   const merchantCell = el('td', { class: 'txn-merchant' }, it.merchant);
+  if (it.manual) {
+    merchantCell.append(el('span', { class: 'badge badge-manual' }, '직접'));
+  }
   if (it.cancel === 'partial') {
     merchantCell.append(el('span', { class: 'badge badge-cancel' }, '부분취소'));
   } else if (it.cancel === 'full') {
@@ -475,6 +699,25 @@ function rowFor(it: LineItem, members: Member[]): HTMLElement[] {
       ),
     );
   }
+  // 직접 추가 항목: × 삭제 버튼.
+  if (it.manual) {
+    merchantCell.append(
+      el(
+        'button',
+        {
+          class: 'row-remove',
+          title: '삭제',
+          'aria-label': '삭제',
+          onClick: (e: Event) => {
+            e.preventDefault();
+            removeItem(it.id);
+            toast('삭제됨');
+          },
+        },
+        '×',
+      ),
+    );
+  }
 
   const tr = el(
     'tr',
@@ -484,13 +727,7 @@ function rowFor(it: LineItem, members: Member[]): HTMLElement[] {
     el('td', {}, excluded ? disabledCategory(it) : categorySelect(it)),
     el('td', { class: 'r' }, amountCell(it)),
     el('td', {}, excluded ? excludedSegment(members) : assignSegment(it, members)),
-    el(
-      'td',
-      {},
-      excluded
-        ? el('span', { class: 'muted', style: { fontSize: '11px', fontWeight: '700' } }, '정산 제외')
-        : splitButton(it),
-    ),
+    el('td', {}, lastCell(it, excluded)),
   );
 
   const rows = [tr];
@@ -561,13 +798,44 @@ export function TransactionList(): HTMLElement {
   );
 
   if (!imp || imp.items.length === 0) {
-    section.append(
-      el(
-        'div',
-        { class: 'card', style: { padding: '28px', textAlign: 'center' } },
-        el('div', { class: 'muted' }, '표시할 거래가 없습니다. 이용내역 파일을 올려주세요.'),
-      ),
+    // 거래가 없어도 직접 추가는 가능(엑셀 없이 가계부 시작).
+    const emptyCard = el(
+      'div',
+      { class: 'card', style: { padding: '28px', textAlign: 'center' } },
+      el('div', { class: 'muted' }, '표시할 거래가 없습니다. 이용내역 파일을 올리거나 직접 추가하세요.'),
     );
+
+    const emptyToolWrap = el('div', { style: { marginBottom: '12px' } });
+    function renderEmptyTool(): void {
+      emptyToolWrap.replaceChildren();
+      emptyToolWrap.append(
+        el(
+          'div',
+          { class: 'row', style: { margin: '0 4px' } },
+          el('span', { class: 'spacer' }),
+          el(
+            'button',
+            {
+              class: 'manual-add-btn',
+              onClick: (e: Event) => {
+                e.preventDefault();
+                manualFormOpen = !manualFormOpen;
+                renderEmptyTool();
+              },
+            },
+            '＋ 직접 추가',
+          ),
+        ),
+      );
+      if (manualFormOpen) {
+        notifyRerender = renderEmptyTool;
+        emptyToolWrap.append(manualForm(members));
+      }
+    }
+    renderEmptyTool();
+
+    section.append(emptyToolWrap);
+    section.append(emptyCard);
     return section;
   }
 
@@ -625,14 +893,41 @@ export function TransactionList(): HTMLElement {
     }),
   );
 
+  // '직접 추가' 버튼 + 인라인 폼: store 변경 없이 토글되므로 in-place 재구성.
+  const addBtn = el(
+    'button',
+    {
+      class: 'manual-add-btn',
+      onClick: (e: Event) => {
+        e.preventDefault();
+        manualFormOpen = !manualFormOpen;
+        renderTool();
+      },
+    },
+    '＋ 직접 추가',
+  );
+
   const toolbar = el(
     'div',
     { class: 'row', style: { margin: '0 4px 12px', flexWrap: 'wrap' } },
     tabs,
     el('span', { class: 'spacer' }),
+    addBtn,
     searchBox,
   );
-  section.append(toolbar);
+
+  // 툴바 + 폼을 감싸는 슬롯(폼 토글 시 이 영역만 다시 그림).
+  const toolWrap = el('div', {});
+  function renderTool(): void {
+    toolWrap.replaceChildren();
+    toolWrap.append(toolbar);
+    if (manualFormOpen) {
+      notifyRerender = renderTool;
+      toolWrap.append(manualForm(members));
+    }
+  }
+  renderTool();
+  section.append(toolWrap);
 
   // 테이블.
   const tbody = el('tbody');

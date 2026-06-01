@@ -10,9 +10,9 @@
 //   .card/.center/.badge/.tag/.row/.spacer/.btn/.btn-sm/.btn-ghost/.cat-bar-track/.cat-bar-fill)
 // 모듈 고유(base.css에 없음, 인라인으로 처리): 비교 패널의 막대(.cat-bar-track 재사용),
 //   trend 표시는 .badge/.tag 토큰 클래스로 대체(별도 .trend 클래스 신설 안 함).
-import { el, won, comma } from '../util';
+import { el, won, comma, toast } from '../util';
 import type { HistoryEntry, SettlementResult } from '../types';
-import { loadHistory, deleteHistory } from '../state/store';
+import { loadHistory, deleteHistory, loadHistoryEntry } from '../state/store';
 
 // 카드 클릭 → 비교 대상으로 펼친 항목 id(모듈 로컬, 재렌더 간 유지). null이면 닫힘.
 let comparedId: string | null = null;
@@ -243,11 +243,28 @@ function comparePanel(e: HistoryEntry, latest: HistoryEntry): HTMLElement {
     ),
   );
 
-  // 이 기록 삭제(과거 카드에서만; 최신은 summary에서 관리하므로 동일하게 허용).
+  // 불러오기(스냅샷 복원) + 이 기록 삭제. (최신도 동일하게 허용.)
   panel.append(
     el(
       'div',
       { class: 'row', style: { marginTop: '4px' } },
+      el(
+        'button',
+        {
+          class: 'btn btn-ghost btn-sm',
+          type: 'button',
+          onClick: (ev: Event) => {
+            ev.stopPropagation();
+            if (!e.snapshot) {
+              toast('예전에 저장된 기록이라 불러올 수 없어요 (다시 저장하면 가능)');
+              return;
+            }
+            loadHistoryEntry(e.id);
+            toast(`「${e.periodLabel}」 불러왔어요`);
+          },
+        },
+        '불러오기',
+      ),
       el('span', { class: 'spacer' }),
       el(
         'button',
