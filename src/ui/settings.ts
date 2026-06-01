@@ -27,6 +27,8 @@ import {
   importBackupJSON,
   resetAll,
 } from '../state/store';
+import { requestToken, createSpreadsheet, writeRange } from '../integrations/google';
+import { GOOGLE_API_KEY } from '../integrations/google-config';
 
 // 멤버 색 슬롯(테마 팔레트 m1..m6).
 const COLOR_SLOTS = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'] as const;
@@ -520,6 +522,63 @@ function dataSection(): HTMLElement {
   );
 }
 
+// ---------- 6) 구글시트 연결 (베타) ----------
+
+function googleSection(): HTMLElement {
+  const statusEl = el('span', { class: 'muted', style: { fontSize: '12px' } }, '');
+
+  const testBtn = el(
+    'button',
+    {
+      class: 'btn btn-ghost',
+      type: 'button',
+      onClick: async () => {
+        try {
+          statusEl.textContent = '구글 로그인 중…';
+          await requestToken(true);
+          statusEl.textContent = '시트 생성 중…';
+          const id = await createSpreadsheet('coupledger 연결 테스트');
+          await writeRange(id, 'A1', [
+            ['coupledger 연결 성공', new Date().toLocaleString('ko-KR')],
+          ]);
+          statusEl.textContent = '연결 성공! 새 탭에서 시트를 열었어요.';
+          toast('구글시트 연결 성공');
+          window.open('https://docs.google.com/spreadsheets/d/' + id, '_blank');
+        } catch (e) {
+          statusEl.textContent = '실패: ' + (e instanceof Error ? e.message : String(e));
+          toast('연결 실패 — 상태 메시지를 확인하세요', 'info');
+        }
+      },
+    },
+    svg(15, '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/>'),
+    '구글 로그인 + 연결 테스트',
+  );
+
+  return el(
+    'div',
+    { class: 'settings-group' },
+    el('h3', null, '구글시트 연결 ', el('span', { class: 'badge', text: '베타' })),
+    el(
+      'p',
+      { class: 'muted', style: { fontSize: '11.5px', fontWeight: '600', margin: '0 0 12px' } },
+      '둘이 같은 시트를 공유해 기록을 함께 봐요. 먼저 로그인·시트 생성이 되는지 테스트합니다.',
+    ),
+    el(
+      'div',
+      { class: 'row', style: { gap: '10px', alignItems: 'center', flexWrap: 'wrap' } },
+      testBtn,
+      statusEl,
+    ),
+    el(
+      'p',
+      { class: 'muted', style: { fontSize: '11px', margin: '10px 0 0' } },
+      GOOGLE_API_KEY
+        ? '폴더 선택(Picker) 준비됨 — 연/월 자동정리·동기화를 붙입니다.'
+        : '※ 폴더 선택(Picker)·자동 동기화는 API 키 등록 후 활성화됩니다.',
+    ),
+  );
+}
+
 // ---------- 페이지 ----------
 
 export function Settings(): HTMLElement {
@@ -557,6 +616,7 @@ export function Settings(): HTMLElement {
     generalSection(),
     categorySection(),
     themeSection(),
+    googleSection(),
     dataSection(),
   );
 
