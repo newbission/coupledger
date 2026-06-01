@@ -16,25 +16,20 @@ function stamp(): string {
   return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// 멤버별 색(공용은 항상 indigo) — Excel/PDF 공용 팔레트.
-const MEMBER_COLORS = ['2563EB', '059669', 'D97706', 'DB2777', '7C3AED', '0891B2'];
-function memberColor(members: Member[], id: string): string {
-  const i = members.findIndex((m) => m.id === id);
-  return MEMBER_COLORS[(i < 0 ? 0 : i) % MEMBER_COLORS.length];
-}
 
 /* ─────────────────────────  Excel  ───────────────────────── */
 
 const KRW = '"₩"#,##0';
+// 미니멀 그레이스케일 — 색 최소, 레이아웃으로 승부.
 const XC = {
-  ink: '111827',
+  ink: '1D2028',
   sub: '6B7280',
-  line: 'E5E7EB',
-  accent: '4F46E5',
-  accentDk: '3730A3',
-  accentBg: 'EEF2FF',
-  heroBg: 'E0E7FF',
-  zebra: 'F8FAFC',
+  faint: '9CA3AF',
+  line: 'E5E8EB',
+  head: 'F3F4F6', // 헤더/섹션 연회색 채움
+  headInk: '2E323B', // 헤더 텍스트
+  rule: '838B98', // 막대/중간 구분
+  zebra: 'FAFBFC',
   white: 'FFFFFF',
 };
 const XFONT = 'Malgun Gothic';
@@ -53,31 +48,34 @@ function bord(sides: string): Sty {
   if (sides.includes('r')) b.right = line;
   return b;
 }
+const headFill = { patternType: 'solid', fgColor: { rgb: XC.head } };
 const S = {
-  title: { font: { name: XFONT, bold: true, sz: 18, color: { rgb: XC.accentDk } }, alignment: { vertical: 'center' } } as Sty,
+  title: { font: { name: XFONT, bold: true, sz: 18, color: { rgb: XC.ink } }, alignment: { vertical: 'center' } } as Sty,
   sub: { font: { name: XFONT, sz: 10, color: { rgb: XC.sub } }, alignment: { vertical: 'center' } } as Sty,
   section: {
-    font: { name: XFONT, bold: true, sz: 11, color: { rgb: XC.white } },
-    fill: { patternType: 'solid', fgColor: { rgb: XC.accent } },
+    font: { name: XFONT, bold: true, sz: 11, color: { rgb: XC.headInk } },
+    fill: headFill,
     alignment: { vertical: 'center', horizontal: 'left' },
   } as Sty,
-  label: { font: { name: XFONT, sz: 11, color: { rgb: '374151' } }, alignment: { vertical: 'center' }, border: bord('b') } as Sty,
-  amount: { font: { name: XFONT, sz: 11, color: { rgb: XC.ink } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b'), } as Sty,
+  label: { font: { name: XFONT, sz: 11, color: { rgb: XC.sub } }, alignment: { vertical: 'center' }, border: bord('b') } as Sty,
+  amount: { font: { name: XFONT, sz: 11, color: { rgb: XC.ink } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b') } as Sty,
   heroL: {
     font: { name: XFONT, bold: true, sz: 13, color: { rgb: XC.ink } },
-    fill: { patternType: 'solid', fgColor: { rgb: XC.heroBg } },
+    fill: headFill,
     alignment: { vertical: 'center' },
+    border: bord('tblr'),
   } as Sty,
   heroR: {
-    font: { name: XFONT, bold: true, sz: 14, color: { rgb: XC.accentDk } },
-    fill: { patternType: 'solid', fgColor: { rgb: XC.heroBg } },
+    font: { name: XFONT, bold: true, sz: 14, color: { rgb: XC.ink } },
+    fill: headFill,
     alignment: { vertical: 'center', horizontal: 'right' },
+    border: bord('tblr'),
   } as Sty,
-  totalL: { font: { name: XFONT, bold: true, sz: 11, color: { rgb: XC.ink } }, alignment: { vertical: 'center' }, border: bord('b') } as Sty,
-  totalR: { font: { name: XFONT, bold: true, sz: 11, color: { rgb: XC.accentDk } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b') } as Sty,
+  totalL: { font: { name: XFONT, bold: true, sz: 11, color: { rgb: XC.ink } }, alignment: { vertical: 'center' }, border: bord('t') } as Sty,
+  totalR: { font: { name: XFONT, bold: true, sz: 11, color: { rgb: XC.ink } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('t') } as Sty,
   th: {
-    font: { name: XFONT, bold: true, sz: 10.5, color: { rgb: XC.white } },
-    fill: { patternType: 'solid', fgColor: { rgb: XC.accent } },
+    font: { name: XFONT, bold: true, sz: 10.5, color: { rgb: XC.headInk } },
+    fill: headFill,
     alignment: { horizontal: 'center', vertical: 'center' },
     border: bord('tblr'),
   } as Sty,
@@ -115,8 +113,8 @@ function makeSheet(rows: XCell[][], cols: number[], merges?: XLSX.Range[]): XLSX
 // KPI/분담/막대용 보조 스타일.
 const kpiLabel: Sty = { font: { name: XFONT, sz: 9.5, color: { rgb: XC.sub } }, alignment: { vertical: 'center' }, border: bord('b') };
 const kpiVal: Sty = { font: { name: XFONT, sz: 12, bold: true, color: { rgb: XC.ink } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b') };
-const kpiSub: Sty = { font: { name: XFONT, sz: 9.5, color: { rgb: XC.accentDk } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b') };
-const barSty = (z: boolean): Sty => td(z, { font: { name: XFONT, sz: 9, color: { rgb: XC.accent } }, alignment: { vertical: 'center', horizontal: 'left' } });
+const kpiSub: Sty = { font: { name: XFONT, sz: 9.5, color: { rgb: XC.sub } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b') };
+const barSty = (z: boolean): Sty => td(z, { font: { name: XFONT, sz: 9, color: { rgb: XC.rule } }, alignment: { vertical: 'center', horizontal: 'left' } });
 
 /** Excel(.xlsx) 다운로드 — '가계부 대시보드' + '거래내역', 가계부 스타일. */
 export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementResult): void {
@@ -202,14 +200,14 @@ export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementRe
       const personal = s.perMemberPersonal[m.id] ?? 0;
       const shared = o ? o.sharedShare : Math.round((s.sharedTotal * (m.weight || 1)) / totalW);
       const isPayer = m.id === s.payerId;
-      const nameSty = td(z, { font: { name: XFONT, sz: 10, bold: true, color: { rgb: memberColor(members, m.id) } } });
+      const nameSty = td(z, { font: { name: XFONT, sz: 10, bold: true, color: { rgb: XC.ink } } });
       R.push([
         { v: m.name + (isPayer ? ' (결제자)' : ''), s: nameSty },
         { v: shared, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' } }), z: KRW },
         { v: personal, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' } }), z: KRW },
         isPayer
           ? { v: '— 선결제', s: td(z, { alignment: { vertical: 'center', horizontal: 'right' }, font: { name: XFONT, sz: 10, color: { rgb: XC.sub } } }) }
-          : { v: o ? o.amount : shared + personal, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' }, font: { name: XFONT, sz: 10, bold: true, color: { rgb: XC.accentDk } } }), z: KRW },
+          : { v: o ? o.amount : shared + personal, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' }, font: { name: XFONT, sz: 10, bold: true, color: { rgb: XC.ink } } }), z: KRW },
         { v: '', s: td(z) },
       ]);
     });
@@ -252,7 +250,7 @@ export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementRe
     const z = i % 2 === 1;
     const shared = isShared(it.assign);
     const whoName = it.excluded ? '제외' : shared ? '공용' : nameOf(memberOf(it.assign) ?? '');
-    const whoColor = it.excluded ? XC.sub : shared ? XC.accent : memberColor(members, memberOf(it.assign) ?? '');
+    const whoColor = it.excluded ? XC.faint : shared ? XC.ink : XC.sub;
     T.push([
       { v: it.date, s: td(z, { font: { name: XFONT, sz: 10, color: { rgb: XC.sub } } }) },
       { v: it.merchant, s: td(z) },

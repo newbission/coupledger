@@ -4,17 +4,21 @@
 import { batchUpdate, getSheets, ensureTab } from './google';
 
 /* ---------- 팔레트(공용: 표지/뷰탭) ---------- */
+// 미니멀(그레이스케일) 팔레트 — 색 최소, 레이아웃/여백/계층으로 승부. indigo/coral은 워드마크에만.
 export const C = {
-  indigo: { red: 0.31, green: 0.275, blue: 0.898 }, // #4F46E5
-  indigoLite: { red: 0.953, green: 0.953, blue: 0.984 }, // #F3F3FB
-  coral: { red: 0.984, green: 0.443, blue: 0.522 }, // #FB7185
-  ink: { red: 0.102, green: 0.102, blue: 0.102 }, // #1A1A1A
+  indigo: { red: 0.31, green: 0.275, blue: 0.898 }, // 워드마크 'l' 전용
+  coral: { red: 0.984, green: 0.443, blue: 0.522 }, // 워드마크 'e' 전용
+  ink: { red: 0.114, green: 0.125, blue: 0.157 }, // #1D2028 본문
   white: { red: 1, green: 1, blue: 1 },
-  ghost: { red: 0.867, green: 0.878, blue: 0.961 }, // #DDE0F5
-  zebra: { red: 0.957, green: 0.961, blue: 0.984 }, // #F4F5FB
-  line: { red: 0.914, green: 0.922, blue: 0.937 }, // #E9EBEF
+  head: { red: 0.953, green: 0.957, blue: 0.965 }, // #F3F4F6 헤더/섹션 연회색
+  headInk: { red: 0.18, green: 0.196, blue: 0.235 }, // 헤더 텍스트(짙은 회색)
+  zebra: { red: 0.98, green: 0.984, blue: 0.988 }, // 아주 옅은 줄무늬
+  line: { red: 0.898, green: 0.91, blue: 0.925 }, // #E5E8EB 헤어라인
+  rule: { red: 0.514, green: 0.553, blue: 0.612 }, // 진한 구분선(거래표 헤더 밑)
   mute: { red: 0.612, green: 0.639, blue: 0.686 },
   gray: { red: 0.42, green: 0.447, blue: 0.502 },
+  bar: { red: 0.741, green: 0.768, blue: 0.804 }, // 막대 단색 회색
+  ghost: { red: 0.45, green: 0.475, blue: 0.522 }, // 부제(헤더 위 보조)
 };
 export const FONT = 'Arial';
 export const CUR = { type: 'NUMBER', pattern: '₩#,##0' };
@@ -117,7 +121,7 @@ export async function writeCover(spreadsheetId: string, ov: YearOverview): Promi
         sheetId: sid,
         title: coverTitle,
         index: 0,
-        tabColorStyle: { rgbColor: C.indigo },
+        tabColorStyle: { rgbColor: C.rule },
         gridProperties: {
           rowCount: ROW_COUNT,
           columnCount: COLS,
@@ -172,7 +176,7 @@ export async function writeCover(spreadsheetId: string, ov: YearOverview): Promi
       range: range(1, 3, 1, 7),
       cell: {
         userEnteredFormat: {
-          backgroundColorStyle: { rgbColor: C.indigo },
+          backgroundColorStyle: { rgbColor: C.head },
           verticalAlignment: 'MIDDLE',
           padding: { top: 2, right: 14, bottom: 2, left: 14 },
         },
@@ -209,28 +213,29 @@ export async function writeCover(spreadsheetId: string, ov: YearOverview): Promi
   rows[1].values[1] = {
     userEnteredValue: { stringValue: 'coupledger' },
     textFormatRuns: [
-      { startIndex: 0, format: wordRun(C.white) },
-      { startIndex: 4, format: wordRun(C.coral) },
-      { startIndex: 6, format: wordRun(C.white) },
+      { startIndex: 0, format: wordRun(C.ink) }, // coup
+      { startIndex: 4, format: wordRun(C.indigo) }, // l
+      { startIndex: 5, format: wordRun(C.coral) }, // e
+      { startIndex: 6, format: wordRun(C.ink) }, // dger
     ],
     userEnteredFormat: {
-      backgroundColorStyle: { rgbColor: C.indigo },
+      backgroundColorStyle: { rgbColor: C.head },
       horizontalAlignment: 'LEFT',
       verticalAlignment: 'MIDDLE',
-      textFormat: tf(C.white, { bold: true, fontSize: 22 }),
+      textFormat: tf(C.ink, { bold: true, fontSize: 22 }),
     },
   };
   rows[1].values[5] = txt('🧾 우리 카드 정산', {
-    backgroundColorStyle: { rgbColor: C.indigo },
+    backgroundColorStyle: { rgbColor: C.head },
     horizontalAlignment: 'RIGHT',
     verticalAlignment: 'MIDDLE',
-    textFormat: tf(C.white, { fontSize: 9 }),
+    textFormat: tf(C.gray, { fontSize: 9 }),
   });
   rows[2].values[1] = txt(`${ov.year} 정산 개요 · 12개월 중 ${M}개월 저장됨`, {
-    backgroundColorStyle: { rgbColor: C.indigo },
+    backgroundColorStyle: { rgbColor: C.head },
     horizontalAlignment: 'LEFT',
     verticalAlignment: 'MIDDLE',
-    textFormat: tf(C.ghost, { fontSize: 11 }),
+    textFormat: tf(C.gray, { fontSize: 11 }),
   });
 
   const fKlabel: Fmt = {
@@ -246,7 +251,7 @@ export async function writeCover(spreadsheetId: string, ov: YearOverview): Promi
     horizontalAlignment: 'LEFT',
     verticalAlignment: 'TOP',
     numberFormat: CUR,
-    textFormat: tf(C.indigo, { fontSize: 18, bold: true }),
+    textFormat: tf(C.ink, { fontSize: 18, bold: true }),
   };
   rows[5].values[1] = num(ov.yearTotals.settledSum, fKnum);
   rows[5].values[3] = num(ov.yearTotals.cardSum, fKnum);
@@ -257,10 +262,10 @@ export async function writeCover(spreadsheetId: string, ov: YearOverview): Promi
   });
 
   const fHead = (align: string): Fmt => ({
-    backgroundColorStyle: { rgbColor: C.indigo },
+    backgroundColorStyle: { rgbColor: C.head },
     horizontalAlignment: align,
     verticalAlignment: 'MIDDLE',
-    textFormat: tf(C.white, { bold: true, fontSize: 10 }),
+    textFormat: tf(C.headInk, { bold: true, fontSize: 10 }),
   });
   rows[7].values[1] = txt('월', fHead('LEFT'));
   rows[7].values[2] = txt('정산 결과', fHead('LEFT'));
@@ -294,11 +299,11 @@ export async function writeCover(spreadsheetId: string, ov: YearOverview): Promi
       rows[r].values[6] = txt(savedAtMMDD(m.savedAt), base(bg, 'CENTER'));
     });
     const fT = (align: string, nf?: Fmt): Fmt => ({
-      backgroundColorStyle: { rgbColor: C.indigoLite },
+      backgroundColorStyle: { rgbColor: C.head },
       horizontalAlignment: align,
       verticalAlignment: 'MIDDLE',
       ...(nf ? { numberFormat: nf } : {}),
-      textFormat: tf(C.indigo, { bold: true, fontSize: 10 }),
+      textFormat: tf(C.headInk, { bold: true, fontSize: 10 }),
     });
     rows[TOTAL_ROW].values[0] = fmtCell(fT('LEFT'));
     rows[TOTAL_ROW].values[1] = txt('합계', fT('LEFT'));
@@ -328,13 +333,13 @@ export async function writeCover(spreadsheetId: string, ov: YearOverview): Promi
 
   // ----- GROUP3: 테두리(맨 끝; updateBorders는 fields 마스크 없음, style이 두께 결정) -----
   R.push({ updateBorders: { range: range(5, 6, 1, 7), bottom: { style: 'SOLID', colorStyle: { rgbColor: C.line } } } });
-  R.push({ updateBorders: { range: range(7, 8, 1, 7), bottom: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.indigo } } } });
+  R.push({ updateBorders: { range: range(7, 8, 1, 7), bottom: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.rule } } } });
   if (M > 0) {
     R.push({ updateBorders: { range: range(DATA_START, TOTAL_ROW, 1, 7), innerHorizontal: { style: 'SOLID', colorStyle: { rgbColor: C.line } } } });
     R.push({
       updateBorders: {
         range: range(TOTAL_ROW, TOTAL_ROW + 1, 1, 7),
-        top: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.indigo } },
+        top: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.rule } },
         bottom: { style: 'SOLID', colorStyle: { rgbColor: C.line } },
       },
     });
@@ -399,22 +404,21 @@ export async function writeMonthView(spreadsheetId: string, d: MonthViewData): P
     rows.push({ values: Array.from({ length: COLS }, () => ({})) });
   };
 
-  const band = (extra: Fmt): Fmt => ({
-    backgroundColorStyle: { rgbColor: C.indigo },
+  const pad = (extra: Fmt): Fmt => ({
     verticalAlignment: 'MIDDLE',
     padding: { top: 1, right: 12, bottom: 1, left: 12 },
     ...extra,
   });
-  const titleFmt = band({ horizontalAlignment: 'LEFT', textFormat: tf(C.white, { bold: true, fontSize: 15 }) });
-  const subFmt = band({ horizontalAlignment: 'LEFT', textFormat: tf(C.ghost, { fontSize: 10 }) });
-  const sectionFmt = band({ horizontalAlignment: 'LEFT', textFormat: tf(C.white, { bold: true, fontSize: 11 }) });
+  const titleFmt = pad({ horizontalAlignment: 'LEFT', textFormat: tf(C.ink, { bold: true, fontSize: 16 }) });
+  const subFmt = pad({ horizontalAlignment: 'LEFT', textFormat: tf(C.ghost, { fontSize: 10 }) });
+  const sectionFmt = pad({ backgroundColorStyle: { rgbColor: C.head }, horizontalAlignment: 'LEFT', textFormat: tf(C.headInk, { bold: true, fontSize: 11 }) });
   const kLabel: Fmt = { horizontalAlignment: 'LEFT', verticalAlignment: 'BOTTOM', textFormat: tf(C.gray, { fontSize: 9, bold: true }) };
-  const kVal: Fmt = { horizontalAlignment: 'LEFT', verticalAlignment: 'TOP', numberFormat: CUR, textFormat: tf(C.indigo, { fontSize: 15, bold: true }) };
+  const kVal: Fmt = { horizontalAlignment: 'LEFT', verticalAlignment: 'TOP', numberFormat: CUR, textFormat: tf(C.ink, { fontSize: 15, bold: true }) };
   const thF = (align: string): Fmt => ({
-    backgroundColorStyle: { rgbColor: C.indigoLite },
+    backgroundColorStyle: { rgbColor: C.head },
     horizontalAlignment: align,
     verticalAlignment: 'MIDDLE',
-    textFormat: tf(C.indigo, { bold: true, fontSize: 10 }),
+    textFormat: tf(C.headInk, { bold: true, fontSize: 10 }),
   });
   const cF = (bg: Color, align: string, color: Color = C.ink, extra: Fmt = {}): Fmt => ({
     backgroundColorStyle: { rgbColor: bg },
@@ -452,15 +456,15 @@ export async function writeMonthView(spreadsheetId: string, d: MonthViewData): P
     row({ 1: txt('🤝 정산 결과', sectionFmt) });
     if (!d.owed.length) {
       mrg(rows.length, rows.length + 1, 1, 7);
-      row({ 1: txt('정산할 금액이 없어요 ✅', cF(C.indigoLite, 'LEFT', C.indigo, { textFormat: tf(C.indigo, { fontSize: 11, bold: true }) })) });
+      row({ 1: txt('정산할 금액이 없어요 ✅', cF(C.head, 'LEFT', C.headInk, { textFormat: tf(C.headInk, { fontSize: 11, bold: true }) })) });
     } else {
       for (const o of d.owed) {
         const r = rows.length;
         mrg(r, r + 1, 1, 5);
         mrg(r, r + 1, 5, 7);
         row({
-          1: txt(`${o.name} → ${d.payerName} 보내기`, cF(C.indigoLite, 'LEFT', C.ink, { textFormat: tf(C.ink, { fontSize: 11, bold: true }) })),
-          5: num(o.amount, cF(C.indigoLite, 'RIGHT', C.indigo, { numberFormat: CUR, textFormat: tf(C.indigo, { fontSize: 13, bold: true }) })),
+          1: txt(`${o.name} → ${d.payerName} 보내기`, cF(C.head, 'LEFT', C.ink, { textFormat: tf(C.ink, { fontSize: 11, bold: true }) })),
+          5: num(o.amount, cF(C.head, 'RIGHT', C.headInk, { numberFormat: CUR, textFormat: tf(C.headInk, { fontSize: 13, bold: true }) })),
         });
       }
     }
@@ -484,16 +488,16 @@ export async function writeMonthView(spreadsheetId: string, d: MonthViewData): P
         1: txt(c.name, cF(bg, 'LEFT')),
         2: num(c.amount, cF(bg, 'RIGHT', C.ink, { numberFormat: CUR })),
         3: num(c.pct, cF(bg, 'CENTER', C.gray, { numberFormat: PCT })),
-        4: txt('█'.repeat(Math.max(1, Math.round(c.pct * 18))), cF(bg, 'LEFT', C.indigo)),
+        4: txt('█'.repeat(Math.max(1, Math.round(c.pct * 18))), cF(bg, 'LEFT', C.bar)),
       });
     });
     const r = rows.length;
     mrg(r, r + 1, 4, 7);
     row({
-      1: txt('합계', cF(C.indigoLite, 'LEFT', C.indigo, { textFormat: tf(C.indigo, { bold: true, fontSize: 10 }) })),
-      2: num(d.sharedTotal, cF(C.indigoLite, 'RIGHT', C.indigo, { numberFormat: CUR, textFormat: tf(C.indigo, { bold: true, fontSize: 10 }) })),
-      3: num(1, cF(C.indigoLite, 'CENTER', C.indigo, { numberFormat: PCT, textFormat: tf(C.indigo, { bold: true, fontSize: 10 }) })),
-      4: fmtCell(cF(C.indigoLite, 'LEFT')),
+      1: txt('합계', cF(C.head, 'LEFT', C.headInk, { textFormat: tf(C.headInk, { bold: true, fontSize: 10 }) })),
+      2: num(d.sharedTotal, cF(C.head, 'RIGHT', C.headInk, { numberFormat: CUR, textFormat: tf(C.headInk, { bold: true, fontSize: 10 }) })),
+      3: num(1, cF(C.head, 'CENTER', C.headInk, { numberFormat: PCT, textFormat: tf(C.headInk, { bold: true, fontSize: 10 }) })),
+      4: fmtCell(cF(C.head, 'LEFT')),
     });
     borders.push({ updateBorders: { range: rng(catHdr + 1, r, 1, 7), innerHorizontal: { style: 'SOLID', colorStyle: { rgbColor: C.line } } } });
   }
@@ -526,13 +530,13 @@ export async function writeMonthView(spreadsheetId: string, d: MonthViewData): P
   const ledEnd = rows.length;
   mrg(ledEnd, ledEnd + 1, 1, 5);
   row({
-    1: txt(`합계 (${d.txCount}건)`, cF(C.indigoLite, 'LEFT', C.indigo, { textFormat: tf(C.indigo, { bold: true, fontSize: 10 }) })),
-    5: num(d.netSum, cF(C.indigoLite, 'RIGHT', C.indigo, { numberFormat: CUR, textFormat: tf(C.indigo, { bold: true, fontSize: 10 }) })),
-    6: fmtCell(cF(C.indigoLite, 'LEFT')),
+    1: txt(`합계 (${d.txCount}건)`, cF(C.head, 'LEFT', C.headInk, { textFormat: tf(C.headInk, { bold: true, fontSize: 10 }) })),
+    5: num(d.netSum, cF(C.head, 'RIGHT', C.headInk, { numberFormat: CUR, textFormat: tf(C.headInk, { bold: true, fontSize: 10 }) })),
+    6: fmtCell(cF(C.head, 'LEFT')),
   });
-  borders.push({ updateBorders: { range: rng(ledHdr, ledHdr + 1, 1, 7), bottom: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.indigo } } } });
+  borders.push({ updateBorders: { range: rng(ledHdr, ledHdr + 1, 1, 7), bottom: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.rule } } } });
   borders.push({ updateBorders: { range: rng(ledHdr + 1, ledEnd, 1, 7), innerHorizontal: { style: 'SOLID', colorStyle: { rgbColor: C.line } } } });
-  borders.push({ updateBorders: { range: rng(ledEnd, ledEnd + 1, 1, 7), top: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.indigo } } } });
+  borders.push({ updateBorders: { range: rng(ledEnd, ledEnd + 1, 1, 7), top: { style: 'SOLID_MEDIUM', colorStyle: { rgbColor: C.rule } } } });
 
   const ROW_COUNT = rows.length;
   const R: unknown[] = [];
@@ -541,7 +545,7 @@ export async function writeMonthView(spreadsheetId: string, d: MonthViewData): P
     updateSheetProperties: {
       properties: {
         sheetId: sid,
-        tabColorStyle: { rgbColor: C.indigo },
+        tabColorStyle: { rgbColor: C.rule },
         gridProperties: { rowCount: ROW_COUNT, columnCount: COLS, frozenRowCount: 2, hideGridlines: true },
       },
       fields: 'tabColorStyle,gridProperties(rowCount,columnCount,frozenRowCount,hideGridlines)',

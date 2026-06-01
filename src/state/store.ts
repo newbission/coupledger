@@ -19,7 +19,7 @@ import type {
 import { assignKey, periodOf, uid } from '../util';
 import { computeSettlement } from '../settlement/engine';
 import { pushEntry, pullAll } from '../integrations/gsync';
-import { pickFolder } from '../integrations/google';
+import { pickFolder, isConnected, requestToken } from '../integrations/google';
 
 // ---------- 상수 ----------
 
@@ -517,11 +517,26 @@ export function isSyncing(id: string): boolean {
   return syncingIds.has(id);
 }
 
+/** 토큰이 만료됐는지(자동 동기화가 팝업에서 멈추는 것 방지용). */
+function setSyncError(id: string, msg: string): void {
+  const i = history.findIndex((h) => h.id === id);
+  if (i >= 0) {
+    history[i] = { ...history[i], syncError: msg };
+    persistHistory();
+    notify();
+  }
+}
+
 /** 한 기록을 구글 시트에 동기화하고 성공/실패 상태를 기록. 실패 시 throw. */
 export async function syncEntry(id: string): Promise<void> {
   const e = history.find((h) => h.id === id);
   const gdrive = state.config.gdrive;
   if (!e || !e.snapshot || !gdrive) return;
+  // 토큰 만료 시 자동 팝업(차단되면 무한 '동기화 중')으로 멈추지 않게 빠르게 실패.
+  if (!isConnected()) {
+    setSyncError(id, '구글 연결이 만료됐어요 · 다시 연결해 주세요');
+    throw new Error('reauth-required');
+  }
   syncingIds.add(id);
   notify();
   try {
@@ -543,6 +558,14 @@ export async function syncEntry(id: string): Promise<void> {
     notify();
     throw err;
   }
+}
+
+/** 만료된 토큰 재발급(사용자 제스처에서 호출) 후 동기화 재시도. */
+export async function retrySync(id: string): Promise<void> {
+  if (!isConnected()) {
+    await requestToken(true); // 클릭 제스처 안에서 호출 → 팝업 허용됨
+  }
+  await syncEntry(id);
 }
 
 /** 폴더 선택 → 시트 기록 자동 불러오기 → 연결 저장. 취소 시 null. */

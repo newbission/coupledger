@@ -19,6 +19,7 @@ import {
   saveCurrentToHistory,
   findHistoryByPeriod,
   syncEntry,
+  retrySync,
   isSyncing,
   connectGoogle,
   setRoute,
@@ -466,11 +467,15 @@ function statusLine(entry: HistoryEntry | null, connected: boolean): HTMLElement
     return line;
   }
   if (entry.syncError) {
+    const reauth = /연결이 만료|reauth/.test(entry.syncError);
     line.classList.add('is-fail');
     line.append(
       ico(ICON.alert, 13),
-      '시트 동기화 실패',
-      el('button', { class: 'btn btn-ghost btn-xs', onClick: () => { void syncEntry(entry.id); } }, '다시 시도'),
+      reauth ? '구글 연결 만료' : '시트 동기화 실패',
+      el('button', {
+        class: 'btn btn-ghost btn-xs',
+        onClick: () => { void retrySync(entry.id).catch(() => {}); },
+      }, reauth ? '다시 연결' : '다시 시도'),
     );
     return line;
   }

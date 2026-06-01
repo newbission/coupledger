@@ -17,7 +17,7 @@ import {
   loadHistory,
   deleteHistory,
   loadHistoryEntry,
-  syncEntry,
+  retrySync,
   isSyncing,
 } from '../state/store';
 import { exportBar } from './exportbar';
@@ -176,7 +176,7 @@ function syncAction(e: HistoryEntry): Node | null {
         toast('예전 기록이라 올릴 수 없어요 (다시 저장하면 가능)');
         return;
       }
-      void syncEntry(e.id)
+      void retrySync(e.id)
         .then(() => toast(`「${e.periodLabel}」 시트에 올렸어요`))
         .catch(() => toast('시트 올리기 실패', 'info'));
     },

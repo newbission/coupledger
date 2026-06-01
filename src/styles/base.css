@@ -40,6 +40,26 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 img, svg { display: block; max-width: 100%; }
 button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
 input, select, textarea { font: inherit; color: inherit; }
+
+/* 기본 인풋 베이스라인 — 클래스 없는 input/select/textarea도 일관된 룩.
+   (.cat-select / .txn-search input / .field 등 더 구체적인 규칙이 뒤에서 덮어씀) */
+input[type=text], input[type=number], input[type=email], input[type=search],
+input[type=tel], input[type=url], input:not([type]), select, textarea {
+  padding: 9px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+  transition: border-color .15s, box-shadow .15s;
+}
+select { cursor: pointer; }
+input[type=text]:focus, input[type=number]:focus, input[type=email]:focus,
+input[type=search]:focus, input:not([type]):focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+input::placeholder, textarea::placeholder { color: var(--faint); }
 a { color: inherit; text-decoration: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
