@@ -9,7 +9,7 @@
 //   나머지(.settle-bar/.settle-result/.settle-panel/.weight-*/.owed-card/.totals/
 //    .bd-row/.bd-divider/.dot/.cat-bar*/.btn 등)는 모두 base.css 고정 클래스.
 import type { Member, OwedLine, SettlementResult } from '../types';
-import { el, won, downloadFile } from '../util';
+import { el, won } from '../util';
 import {
   getState,
   getSettlement,
@@ -19,7 +19,7 @@ import {
   saveCurrentToHistory,
   findHistoryByPeriod,
 } from '../state/store';
-import { exportCSV } from '../export/csv';
+import { exportBar } from './exportbar';
 
 // ---------- 공통 헬퍼 ----------
 
@@ -374,39 +374,32 @@ function bdRow(
 // ----- 저장 & 내보내기 패널 -----
 
 function exportPanel(s: SettlementResult): HTMLElement {
-  const panel = el('div', {
-    class: 'settle-panel',
-    style: { marginTop: '14px' },
-  });
+  const panel = el('div', { class: 'settle-panel', style: { marginTop: '14px' } });
+  const imp = getState().session.import;
+  const members = getState().config.members;
 
-  const row = el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '12px' } });
-
-  row.append(
-    el('button', { class: 'btn btn-primary', onClick: () => csvExport() },
-      'CSV 내보내기',
+  // 로컬 기록 저장(localStorage)
+  panel.append(
+    el(
+      'div',
+      { class: 'row', style: { flexWrap: 'wrap', gap: '12px', alignItems: 'center' } },
+      el('button', { class: 'btn btn-primary', onClick: () => saveFlow() },
+        s.solo ? '이번 달 기록 저장 (로컬)' : '이번 달 정산 저장 (로컬)',
+      ),
+      el('span', { class: 'spacer' }),
+      el('span', { class: 'sec-desc', text: '기록은 이 브라우저에만 저장돼요' }),
     ),
-    el('button', { class: 'btn btn-ghost', onClick: () => saveFlow() },
-      s.solo ? '이번 달 기록 저장 (로컬)' : '이번 달 정산 저장 (로컬)',
-    ),
-    el('span', { class: 'spacer' }),
-    el('span', { class: 'sec-desc', text: '기록은 이 브라우저에만 저장돼요' }),
   );
 
-  panel.append(row);
+  // 파일/시트 내보내기 (Excel · CSV · PDF · 구글 시트)
+  if (imp) {
+    panel.append(el('div', { style: { marginTop: '10px' } }, exportBar(imp, members, s)));
+  }
   return panel;
 }
 
 // ---------- 액션 ----------
 
-function csvExport(): void {
-  const imp = getState().session.import;
-  if (!imp) return;
-  const members = getState().config.members;
-  const s = getSettlement();
-  const csv = exportCSV(imp, members, s);
-  const name = `coupledger_${imp.periodLabel.replace(/\./g, '-')}.csv`;
-  downloadFile(name, csv, 'text/csv;charset=utf-8');
-}
 
 function saveFlow(): void {
   const imp = getState().session.import;

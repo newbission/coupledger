@@ -13,6 +13,7 @@
 import { el, won, comma, toast } from '../util';
 import type { HistoryEntry, SettlementResult } from '../types';
 import { getState, loadHistory, deleteHistory, loadHistoryEntry } from '../state/store';
+import { exportBar } from './exportbar';
 
 // 카드 클릭 → 비교 대상으로 펼친 항목 id(모듈 로컬, 재렌더 간 유지). null이면 닫힘.
 let comparedId: string | null = null;
@@ -306,7 +307,17 @@ function comparePanel(e: HistoryEntry, latest: HistoryEntry): HTMLElement {
     ),
   );
 
-  // (불러오기/삭제는 썸네일 cardActions 로 이동 — 펼치지 않아도 가능)
+  // (불러오기/삭제는 썸네일 cardActions 로 이동)
+  // 내보내기: 이 기록을 Excel/CSV/PDF/구글시트로
+  if (e.snapshot) {
+    panel.append(
+      el(
+        'div',
+        { style: { marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--line)' } },
+        exportBar(e.snapshot, getState().config.members, e.settlement, e),
+      ),
+    );
+  }
 
   // 패널 내부 클릭이 카드 토글로 버블링되지 않도록.
   panel.addEventListener('click', (ev) => ev.stopPropagation());
