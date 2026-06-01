@@ -90,12 +90,12 @@ function mainView(): HTMLElement {
     container.append(TransactionList());
   }
 
-  const root = el('div', { class: 'app' }, container);
-  // 넓은 화면: 지난 기록을 좌측 플로팅 섬으로(접기 없이 항상 표시, 스크롤 따라옴).
+  // 넓은 화면: 본문 + 우측 레일을 그리드로 분할(겹침 없음). 좁으면 본문만.
   if (wide) {
-    root.append(el('div', { class: 'float-history' }, History()));
+    const rail = el('aside', { class: 'history-rail' }, History());
+    return el('div', { class: 'app' }, el('div', { class: 'wide-grid' }, container, rail));
   }
-  return root;
+  return el('div', { class: 'app' }, container);
 }
 
 /** 상태에 맞는 화면을 host 에 mount. window.scrollY 보존. */

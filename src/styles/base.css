@@ -639,8 +639,12 @@ a { color: inherit; text-decoration: none; }
 .owed-card .pay { margin-left: auto; text-align: right; }
 .owed-card .pay .amt { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
 .owed-card .pay .k { font-size: 10.5px; color: var(--faint); font-weight: 700; }
-.owed-card.is-payer { background: var(--surface-2); border-color: var(--line); }
-.owed-card.is-payer .pay .amt { color: var(--sub); }
+.owed-card.is-payer {
+  background: var(--surface);
+  border-color: var(--line);
+  border-left: 3px solid var(--accent2);
+}
+.owed-card.is-payer .pay .amt { color: var(--ink); }
 
 /* totals breakdown */
 .totals { display: flex; flex-direction: column; gap: 9px; }
@@ -656,16 +660,17 @@ a { color: inherit; text-decoration: none; }
 /* category bars */
 .cat-bars { display: flex; flex-direction: column; gap: 11px; }
 .cat-bar { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
-.cat-bar-name { width: 96px; flex: 0 0 auto; font-weight: 600; color: var(--sub); }
+.cat-bar-name {
+  width: 96px; flex: 0 0 auto; font-weight: 700; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .cat-bar-track {
   flex: 1 1 auto; height: 9px; border-radius: var(--radius-pill);
   background: var(--surface-2); overflow: hidden;
 }
-.cat-bar-fill {
-  height: 100%; border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, var(--accent2), var(--accent2-deep));
-}
-.cat-bar-amt { width: 78px; flex: 0 0 auto; text-align: right; font-weight: 800; font-size: 12px; }
+.cat-bar-fill { height: 100%; border-radius: var(--radius-pill); background: var(--accent2); }
+.cat-bar-amt { width: 96px; flex: 0 0 auto; text-align: right; font-weight: 800; font-size: 12px; }
+.cat-bar-pct { color: var(--faint); font-weight: 700; font-size: 11px; }
 
 /* ===================================================================
    HISTORY / SETTINGS / ONBOARDING
@@ -783,17 +788,24 @@ a { color: inherit; text-decoration: none; }
   .split-panel { padding: 8px 0 2px; }
 }
 
-/* 지난 기록 — 넓은 화면에서 우측 플로팅 섬(스크롤 따라옴) */
-.float-history {
-  position: fixed;
-  left: 20px;
-  top: 84px;
-  width: 320px;
-  max-height: calc(100vh - 104px);
-  overflow-y: auto;
-  z-index: 40;
+/* 지난 기록 — 넓은 화면에서 우측 레일(겹침 없이 그리드 분할, 스크롤 따라옴) */
+.wide-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  max-width: 1480px;
+  margin: 0 auto;
+  align-items: start;
 }
-.float-history > .section {
+.wide-grid > .container { max-width: none; margin: 0; width: auto; }
+.history-rail {
+  position: sticky;
+  top: 84px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+.history-rail > .section {
   margin: 0;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -801,8 +813,7 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--shadow-lg);
   padding: 16px 18px;
 }
-/* 섬 안에서는 카드 1열 꽉 채움 */
-.float-history .history { grid-template-columns: 1fr; }
-.float-history .history-card { width: 100%; }
+.history-rail .history { grid-template-columns: 1fr; }
+.history-rail .history-card { width: 100%; }
 /* 현재 불러와서 보고 있는 기록 강조 */
 .history-card.is-loaded { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

@@ -4,7 +4,7 @@
 // 사용 클래스: base.css(.topbar/.topbar-left/.topbar-right/.source-pill/.pill/.gear/
 //   .memberbar/.member-chip/.member-dot/.payer-badge/.member-add/.badge/.num/.muted)
 import { el } from '../util';
-import { getState, setRoute, addMember } from '../state/store';
+import { getState, setRoute } from '../state/store';
 import { lockupEl } from '../brand';
 
 /** 소스 ID → 표시 라벨 (현재 삼성카드만 지원) */
@@ -85,10 +85,8 @@ export function Header(): HTMLElement {
     {
       class: 'member-add',
       type: 'button',
-      onClick: () => {
-        const name = window.prompt('새 멤버 이름을 입력하세요')?.trim();
-        if (name) addMember(name);
-      },
+      onClick: () => setRoute('settings'),
+      title: '설정에서 멤버를 추가·관리해요',
     },
     el('span', { text: '+' }),
     '멤버',

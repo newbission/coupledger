@@ -275,7 +275,7 @@ function soloLeftPanel(s: SettlementResult): HTMLElement {
   const p = payer();
   panel.append(
     el('h3', { text: '이번 달 지출' }),
-    el('p', { class: 'h-desc', text: '혼자 쓰는 가계부 — 취소 반영(net) 기준 총지출' }),
+    el('p', { class: 'h-desc', text: '혼자 쓰는 가계부 — 취소 반영 기준 총지출' }),
   );
 
   const card = el('div', { class: 'owed-card' });
@@ -286,7 +286,7 @@ function soloLeftPanel(s: SettlementResult): HTMLElement {
     ),
     el('div', { class: 'pay' },
       el('div', { class: 'amt num', text: won(s.cardTotalNet) }),
-      el('div', { class: 'k', text: '총 지출(net)' }),
+      el('div', { class: 'k', text: '총 지출' }),
     ),
   );
   panel.append(card);
@@ -304,7 +304,7 @@ function rightPanel(s: SettlementResult): HTMLElement {
 
   panel.append(
     el('h3', { text: '금액 구성' }),
-    el('p', { class: 'h-desc', text: '취소 반영(net) 기준' }),
+    el('p', { class: 'h-desc', text: '취소 반영 기준' }),
   );
 
   const totals = el('div', { class: 'totals' });
@@ -312,7 +312,7 @@ function rightPanel(s: SettlementResult): HTMLElement {
   if (s.solo) {
     // 혼자: 카테고리 합/총지출만(공용/개인 구분 없음)
     totals.append(
-      bdRow('var(--shared)', '총 지출(net)', won(s.cardTotalNet), true),
+      bdRow('var(--shared)', '총 지출', won(s.cardTotalNet), true),
     );
   } else {
     // 공용 합계
@@ -338,7 +338,7 @@ function rightPanel(s: SettlementResult): HTMLElement {
     }
 
     totals.append(el('div', { class: 'bd-divider' }));
-    totals.append(bdRow(null, '카드 총청구 (net)', won(s.cardTotalNet), true));
+    totals.append(bdRow(null, '카드 총청구 ', won(s.cardTotalNet), true));
 
     // 각 비결제자 정산액 = 공용 몫 + 개인
     for (const line of s.owed) {
@@ -366,19 +366,25 @@ function rightPanel(s: SettlementResult): HTMLElement {
     panel.append(el('p', { class: 'h-desc muted', text: '아직 분류된 공용 지출이 없어요' }));
   } else {
     const max = cats[0].amount || 1;
+    const total = cats.reduce((a, c) => a + c.amount, 0) || 1;
     const bars = el('div', { class: 'cat-bars' });
-    for (const c of cats) {
+    cats.forEach((c, i) => {
       const width = Math.max(2, Math.round((c.amount / max) * 100));
       const fill = el('span', { class: 'cat-bar-fill' });
       fill.style.width = width + '%';
+      fill.style.background = `var(--m${(i % 6) + 1})`;
+      const pct = Math.round((c.amount / total) * 100);
       bars.append(
         el('div', { class: 'cat-bar' },
           el('span', { class: 'cat-bar-name', text: c.category }),
           el('span', { class: 'cat-bar-track' }, fill),
-          el('span', { class: 'cat-bar-amt num', text: won(c.amount) }),
+          el('span', { class: 'cat-bar-amt num' },
+            won(c.amount),
+            el('span', { class: 'cat-bar-pct', text: ` ${pct}%` }),
+          ),
         ),
       );
-    }
+    });
     panel.append(bars);
   }
 
