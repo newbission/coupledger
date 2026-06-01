@@ -91,9 +91,9 @@ function mainView(): HTMLElement {
   }
 
   const root = el('div', { class: 'app' }, container);
-  // 넓은 화면: 지난 기록을 우측 플로팅 섬으로(스크롤 따라옴).
+  // 넓은 화면: 지난 기록을 좌측 플로팅 섬으로(접기 없이 항상 표시, 스크롤 따라옴).
   if (wide) {
-    root.append(el('div', { class: 'float-history' }, collapsible(History(), 'history', true)));
+    root.append(el('div', { class: 'float-history' }, History()));
   }
   return root;
 }

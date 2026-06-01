@@ -136,6 +136,8 @@ export interface HistoryEntry {
 
 export interface Session {
   import: ImportResult | null;
+  /** 현재 보고 있는 내역이 어떤 저장 기록에서 불러온 것인지(없으면 새 업로드) */
+  loadedHistoryId?: string | null;
 }
 
 export interface AppState {

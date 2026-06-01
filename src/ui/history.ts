@@ -12,7 +12,7 @@
 //   trend 표시는 .badge/.tag 토큰 클래스로 대체(별도 .trend 클래스 신설 안 함).
 import { el, won, comma, toast } from '../util';
 import type { HistoryEntry, SettlementResult } from '../types';
-import { loadHistory, deleteHistory, loadHistoryEntry } from '../state/store';
+import { getState, loadHistory, deleteHistory, loadHistoryEntry } from '../state/store';
 
 // 카드 클릭 → 비교 대상으로 펼친 항목 id(모듈 로컬, 재렌더 간 유지). null이면 닫힘.
 let comparedId: string | null = null;
@@ -103,6 +103,48 @@ export function History(): HTMLElement {
   return section;
 }
 
+/** 썸네일 하단 액션: 불러오기 + 삭제 (펼치지 않아도 가능). */
+function cardActions(e: HistoryEntry): HTMLElement {
+  return el(
+    'div',
+    { class: 'row', style: { marginTop: '10px', gap: '8px' } },
+    el(
+      'button',
+      {
+        class: 'btn btn-ghost btn-sm',
+        type: 'button',
+        onClick: (ev: Event) => {
+          ev.stopPropagation();
+          if (!e.snapshot) {
+            toast('예전에 저장된 기록이라 불러올 수 없어요 (다시 저장하면 가능)');
+            return;
+          }
+          loadHistoryEntry(e.id);
+          toast(`「${e.periodLabel}」 불러왔어요`);
+        },
+      },
+      '불러오기',
+    ),
+    el('span', { class: 'spacer' }),
+    el(
+      'button',
+      {
+        class: 'btn btn-ghost btn-sm',
+        type: 'button',
+        style: { color: 'var(--danger)' },
+        onClick: (ev: Event) => {
+          ev.stopPropagation();
+          if (window.confirm(`${e.periodLabel} 기록을 삭제할까요?`)) {
+            if (comparedId === e.id) comparedId = null;
+            deleteHistory(e.id);
+          }
+        },
+      },
+      '삭제',
+    ),
+  );
+}
+
 /** 월별 카드 1장. */
 function card(
   e: HistoryEntry,
@@ -111,13 +153,20 @@ function card(
   latest: HistoryEntry,
 ): HTMLElement {
   const head = headlineOwed(e);
+  const isLoaded = getState().session.loadedHistoryId === e.id;
 
-  // 월 라벨 + (최신이면) '이번 달' 태그.
+  // 월 라벨 + (최신/보는 중) 태그.
   const mo = el(
     'div',
     { class: 'mo num' },
     e.periodLabel,
     isCurrent && el('span', { class: 'tag', style: { fontSize: '9.5px', padding: '1px 7px' }, text: '최신' }),
+    isLoaded &&
+      el('span', {
+        class: 'tag',
+        style: { fontSize: '9.5px', padding: '1px 7px', background: 'var(--accent-soft)', color: 'var(--accent-deep)' },
+        text: '보는 중',
+      }),
   );
 
   // 대표 정산결과(있으면) / solo면 총지출.
@@ -148,7 +197,10 @@ function card(
   const c = el(
     'button',
     {
-      class: 'history-card' + (isCurrent ? ' is-current' : ' is-placeholder'),
+      class:
+        'history-card' +
+        (isCurrent ? ' is-current' : ' is-placeholder') +
+        (isLoaded ? ' is-loaded' : ''),
       type: 'button',
       style: { textAlign: 'left', display: 'block', width: '100%' },
       title: '자세히보기',
@@ -161,6 +213,7 @@ function card(
     big,
     small,
     trend,
+    cardActions(e),
     detailToggle,
   );
 
@@ -253,46 +306,7 @@ function comparePanel(e: HistoryEntry, latest: HistoryEntry): HTMLElement {
     ),
   );
 
-  // 불러오기(스냅샷 복원) + 이 기록 삭제. (최신도 동일하게 허용.)
-  panel.append(
-    el(
-      'div',
-      { class: 'row', style: { marginTop: '4px' } },
-      el(
-        'button',
-        {
-          class: 'btn btn-ghost btn-sm',
-          type: 'button',
-          onClick: (ev: Event) => {
-            ev.stopPropagation();
-            if (!e.snapshot) {
-              toast('예전에 저장된 기록이라 불러올 수 없어요 (다시 저장하면 가능)');
-              return;
-            }
-            loadHistoryEntry(e.id);
-            toast(`「${e.periodLabel}」 불러왔어요`);
-          },
-        },
-        '불러오기',
-      ),
-      el('span', { class: 'spacer' }),
-      el(
-        'button',
-        {
-          class: 'btn btn-ghost btn-sm',
-          type: 'button',
-          onClick: (ev: Event) => {
-            ev.stopPropagation();
-            if (window.confirm(`${e.periodLabel} 기록을 삭제할까요?`)) {
-              if (comparedId === e.id) comparedId = null;
-              deleteHistory(e.id);
-            }
-          },
-        },
-        '이 기록 삭제',
-      ),
-    ),
-  );
+  // (불러오기/삭제는 썸네일 cardActions 로 이동 — 펼치지 않아도 가능)
 
   // 패널 내부 클릭이 카드 토글로 버블링되지 않도록.
   panel.addEventListener('click', (ev) => ev.stopPropagation());

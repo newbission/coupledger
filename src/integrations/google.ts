@@ -32,6 +32,32 @@ let tokenClient: TokenClient | null = null;
 let accessToken: string | null = null;
 let tokenExpiry = 0;
 
+// 액세스 토큰을 localStorage에 저장(약 1시간) → 새로고침/설정 재진입 시 재로그인 방지.
+const TOKEN_KEY = 'coupledger.gtoken.v1';
+function persistToken(): void {
+  try {
+    if (accessToken && tokenExpiry > Date.now()) {
+      localStorage.setItem(TOKEN_KEY, JSON.stringify({ token: accessToken, exp: tokenExpiry }));
+    }
+  } catch {
+    /* 무시 */
+  }
+}
+(() => {
+  try {
+    const raw = localStorage.getItem(TOKEN_KEY);
+    if (raw) {
+      const o = JSON.parse(raw) as { token?: string; exp?: number };
+      if (o.token && typeof o.exp === 'number' && o.exp > Date.now()) {
+        accessToken = o.token;
+        tokenExpiry = o.exp;
+      }
+    }
+  } catch {
+    /* 무시 */
+  }
+})();
+
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) {
@@ -72,6 +98,7 @@ export async function requestToken(interactive = true): Promise<string> {
       }
       accessToken = resp.access_token;
       tokenExpiry = Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000;
+      persistToken();
       resolve(accessToken);
     };
     tokenClient!.requestAccessToken({ prompt: interactive ? 'consent' : '' });
@@ -95,6 +122,11 @@ export function disconnect(): void {
   if (accessToken) window.google?.accounts?.oauth2.revoke(accessToken);
   accessToken = null;
   tokenExpiry = 0;
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* 무시 */
+  }
 }
 
 async function api<T>(url: string, opts: RequestInit = {}): Promise<T> {

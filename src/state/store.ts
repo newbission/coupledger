@@ -291,6 +291,7 @@ export function setImport(r: ImportResult | null): void {
     }
   }
   state.session.import = r;
+  state.session.loadedHistoryId = null; // 새 업로드 → 기록과 연결 해제
   notify();
 }
 
@@ -513,6 +514,7 @@ export function loadHistoryEntry(id: string): void {
   const e = history.find((h) => h.id === id);
   if (!e || !e.snapshot) return;
   state.session.import = structuredClone(e.snapshot);
+  state.session.loadedHistoryId = id;
   state.route = 'app';
   notify();
 }
