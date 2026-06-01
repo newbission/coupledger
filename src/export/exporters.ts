@@ -37,7 +37,9 @@ const XC = {
   zebra: 'F8FAFC',
   white: 'FFFFFF',
 };
-const XFONT = 'Apple SD Gothic Neo';
+const XFONT = 'Malgun Gothic';
+const KRWNEG = '"₩"#,##0;[Red]-"₩"#,##0'; // 환불/음수는 빨강
+const PCTZ = '0.0%';
 
 type Sty = Record<string, unknown>;
 type XCell = { v: string | number; s?: Sty; z?: string };
@@ -110,46 +112,136 @@ function makeSheet(rows: XCell[][], cols: number[], merges?: XLSX.Range[]): XLSX
   return ws;
 }
 
-/** Excel(.xlsx) 다운로드 — '정산' + '거래내역' 두 시트, 풀 스타일. */
+// KPI/분담/막대용 보조 스타일.
+const kpiLabel: Sty = { font: { name: XFONT, sz: 9.5, color: { rgb: XC.sub } }, alignment: { vertical: 'center' }, border: bord('b') };
+const kpiVal: Sty = { font: { name: XFONT, sz: 12, bold: true, color: { rgb: XC.ink } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b') };
+const kpiSub: Sty = { font: { name: XFONT, sz: 9.5, color: { rgb: XC.accentDk } }, alignment: { vertical: 'center', horizontal: 'right' }, border: bord('b') };
+const barSty = (z: boolean): Sty => td(z, { font: { name: XFONT, sz: 9, color: { rgb: XC.accent } }, alignment: { vertical: 'center', horizontal: 'left' } });
+
+/** Excel(.xlsx) 다운로드 — '가계부 대시보드' + '거래내역', 가계부 스타일. */
 export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementResult): void {
   const nameOf = nameMap(members);
   const wb = XLSX.utils.book_new();
   const pad = (n: number): XCell[] => Array.from({ length: n }, () => ({ v: '' }));
+  const section = (label: string): XCell[] => [
+    { v: label, s: S.section },
+    { v: '', s: S.section },
+    { v: '', s: S.section },
+    { v: '', s: S.section },
+    { v: '', s: S.section },
+  ];
 
-  /* ── 시트1: 정산 ── */
+  // ── 지표 계산(PDF와 동일) ──
+  const active = imp.items.filter((it) => !it.excluded);
+  const txCount = active.length;
+  const personalTotal = Object.values(s.perMemberPersonal).reduce((a, b) => a + b, 0);
+  const avgTx = txCount ? Math.round(s.cardTotalNet / txCount) : 0;
+  const installCount = active.filter((it) => it.installment).length;
+  const top = s.byCategoryShared[0];
+  const totalW = members.reduce((a, m) => a + (m.weight || 1), 0) || 1;
+  const owedByMember = new Map(s.owed.map((o) => [o.memberId, o]));
+  const pctOf = (n: number): number => (s.cardTotalNet ? n / s.cardTotalNet : 0);
+
+  /* ── 시트1: 가계부 대시보드 ── */
   const R: XCell[][] = [];
-  R.push([{ v: `coupledger · ${imp.periodLabel} 정산`, s: S.title }, ...pad(2)]);
-  R.push([{ v: `생성 ${stamp()}`, s: S.sub }, ...pad(2)]);
-  R.push(pad(3));
-  R.push([{ v: '  정산 결과', s: S.section }, { v: '', s: S.section }, { v: '', s: S.section }]);
-  if (!s.solo) {
+  const merges: XLSX.Range[] = [];
+  const mergeRow = (r: number): void => {
+    merges.push({ s: { r, c: 0 }, e: { r, c: 4 } });
+  };
+
+  mergeRow(0); R.push([{ v: `coupledger · ${imp.periodLabel} 가계부`, s: S.title }, ...pad(4)]);
+  mergeRow(1); R.push([{ v: `${imp.periodStart} ~ ${imp.periodEnd} · 생성 ${stamp()}`, s: S.sub }, ...pad(4)]);
+  R.push(pad(5));
+
+  // 정산 결과(히어로)
+  mergeRow(R.length); R.push(section('  🤝 정산 결과'));
+  if (s.solo) {
+    R.push([{ v: '이번 달 총지출', s: S.heroL }, { v: s.cardTotalNet, s: S.heroR, z: KRW }, ...pad(3)]);
+  } else if (!s.owed.length) {
+    R.push([{ v: '정산할 금액이 없어요 ✅', s: S.heroL }, ...pad(4)]);
+  } else {
     for (const o of s.owed) {
+      merges.push({ s: { r: R.length, c: 1 }, e: { r: R.length, c: 4 } });
       R.push([
         { v: `${nameOf(o.memberId)} → ${nameOf(s.payerId)} 보내기`, s: S.heroL },
         { v: o.amount, s: S.heroR, z: KRW },
-        { v: '', s: S.heroR },
+        ...pad(3),
       ]);
     }
   }
-  R.push([{ v: '카드 총청구 (net)', s: S.label }, { v: s.cardTotalNet, s: S.amount, z: KRW }, { v: '', s: S.amount }]);
-  R.push([{ v: '공용 합계', s: S.totalL }, { v: s.sharedTotal, s: S.totalR, z: KRW }, { v: '', s: S.totalR }]);
-  R.push(pad(3));
-  R.push([{ v: '  공용 카테고리별', s: S.section }, { v: '', s: S.section }, { v: '', s: S.section }]);
+  R.push(pad(5));
+
+  // KPI
+  mergeRow(R.length); R.push(section('  📊 한눈에 보기'));
+  const kpi = (label: string, value: number | string, sub: string): void => {
+    R.push([
+      { v: label, s: kpiLabel },
+      { v: value, s: kpiVal, z: typeof value === 'number' ? KRW : undefined },
+      { v: sub, s: kpiSub },
+      { v: '', s: kpiLabel },
+      { v: '', s: kpiLabel },
+    ]);
+  };
+  kpi('카드 총청구', s.cardTotalNet, `${txCount}건`);
+  if (!s.solo) {
+    kpi('공용 합계', s.sharedTotal, `${Math.round(pctOf(s.sharedTotal) * 100)}%`);
+    kpi('개인 합계', personalTotal, `${Math.round(pctOf(personalTotal) * 100)}%`);
+  }
+  kpi('평균 거래액', avgTx, '');
+  kpi('할부', `${installCount}건`, '');
+  kpi('최다 카테고리', top ? top.category : '—', top ? wonCompact(top.amount) : '');
+  R.push(pad(5));
+
+  // 멤버별 분담(다인)
+  if (!s.solo && members.length >= 2) {
+    mergeRow(R.length); R.push(section('  👥 멤버별 분담'));
+    R.push(['멤버', '공용 분담', '개인', '합계', ''].map((h) => ({ v: h, s: S.th })));
+    members.forEach((m, i) => {
+      const z = i % 2 === 1;
+      const o = owedByMember.get(m.id);
+      const personal = s.perMemberPersonal[m.id] ?? 0;
+      const shared = o ? o.sharedShare : Math.round((s.sharedTotal * (m.weight || 1)) / totalW);
+      const isPayer = m.id === s.payerId;
+      const nameSty = td(z, { font: { name: XFONT, sz: 10, bold: true, color: { rgb: memberColor(members, m.id) } } });
+      R.push([
+        { v: m.name + (isPayer ? ' (결제자)' : ''), s: nameSty },
+        { v: shared, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' } }), z: KRW },
+        { v: personal, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' } }), z: KRW },
+        isPayer
+          ? { v: '— 선결제', s: td(z, { alignment: { vertical: 'center', horizontal: 'right' }, font: { name: XFONT, sz: 10, color: { rgb: XC.sub } } }) }
+          : { v: o ? o.amount : shared + personal, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' }, font: { name: XFONT, sz: 10, bold: true, color: { rgb: XC.accentDk } } }), z: KRW },
+        { v: '', s: td(z) },
+      ]);
+    });
+    R.push(pad(5));
+  }
+
+  // 카테고리 + 막대 + 비중
+  mergeRow(R.length); R.push(section(s.solo ? '  🏷️ 카테고리별 지출' : '  🏷️ 공용 카테고리별 지출'));
+  R.push(['카테고리', '금액', '비중', '분포', ''].map((h) => ({ v: h, s: S.th })));
+  const catBase = s.byCategoryShared.reduce((a, c) => a + c.amount, 0) || 1;
   s.byCategoryShared.forEach((c, i) => {
     const z = i % 2 === 1;
+    const pct = c.amount / catBase;
     R.push([
       { v: c.category, s: td(z) },
       { v: c.amount, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' } }), z: KRW },
+      { v: pct, s: td(z, { alignment: { vertical: 'center', horizontal: 'center' } }), z: PCTZ },
+      { v: '█'.repeat(Math.max(1, Math.round(pct * 16))), s: barSty(z) },
       { v: '', s: td(z) },
     ]);
   });
-  const ws1 = makeSheet(R, [26, 18, 4], [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
-    { s: { r: 3, c: 0 }, e: { r: 3, c: 2 } },
+  R.push([
+    { v: '합계', s: S.totalL },
+    { v: s.sharedTotal, s: S.totalR, z: KRW },
+    { v: 1, s: S.totalR, z: PCTZ },
+    { v: '', s: S.totalR },
+    { v: '', s: S.totalR },
   ]);
+
+  const ws1 = makeSheet(R, [22, 16, 9, 22, 4], merges);
   ws1['!rows'] = [{ hpt: 26 }, { hpt: 16 }];
-  XLSX.utils.book_append_sheet(wb, ws1, '정산');
+  XLSX.utils.book_append_sheet(wb, ws1, '가계부');
 
   /* ── 시트2: 거래내역 ── */
   const heads = ['일자', '가맹점', '금액(net)', '분류', '카테고리', '취소', '할부'];
@@ -162,18 +254,32 @@ export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementRe
     const whoName = it.excluded ? '제외' : shared ? '공용' : nameOf(memberOf(it.assign) ?? '');
     const whoColor = it.excluded ? XC.sub : shared ? XC.accent : memberColor(members, memberOf(it.assign) ?? '');
     T.push([
-      { v: it.date, s: td(z) },
+      { v: it.date, s: td(z, { font: { name: XFONT, sz: 10, color: { rgb: XC.sub } } }) },
       { v: it.merchant, s: td(z) },
-      { v: it.net, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' }, font: { name: XFONT, sz: 10, bold: true, color: { rgb: XC.ink } } }), z: KRW },
+      { v: it.net, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' }, font: { name: XFONT, sz: 10, bold: true, color: { rgb: XC.ink } } }), z: KRWNEG },
       { v: whoName, s: td(z, { font: { name: XFONT, sz: 10, bold: true, color: { rgb: whoColor } }, alignment: { vertical: 'center', horizontal: 'center' } }) },
-      { v: it.category ?? '', s: td(z) },
+      { v: it.category ?? '', s: td(z, { font: { name: XFONT, sz: 10, color: { rgb: XC.sub } } }) },
       { v: it.cancel === 'none' ? '' : it.cancel, s: td(z, { alignment: { vertical: 'center', horizontal: 'center' } }) },
       { v: it.installment ? `${it.installmentMonths}개월` : '', s: td(z, { alignment: { vertical: 'center', horizontal: 'center' } }) },
     ]);
   });
-  const ws2 = makeSheet(T, [13, 32, 14, 9, 15, 8, 9], [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]);
+  // 합계 행
+  const sumRow = T.length;
+  T.push([
+    { v: `합계 (${txCount}건)`, s: S.totalL },
+    { v: '', s: S.totalL },
+    { v: active.reduce((a, it) => a + it.net, 0), s: S.totalR, z: KRWNEG },
+    { v: '', s: S.totalR },
+    { v: '', s: S.totalR },
+    { v: '', s: S.totalR },
+    { v: '', s: S.totalR },
+  ]);
+  const ws2 = makeSheet(T, [13, 32, 14, 9, 15, 8, 9], [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+    { s: { r: sumRow, c: 0 }, e: { r: sumRow, c: 1 } },
+  ]);
   ws2['!rows'] = [{ hpt: 24 }, { hpt: 20 }];
-  ws2['!autofilter'] = { ref: `A2:G${T.length}` };
+  ws2['!autofilter'] = { ref: `A2:G${T.length - 1}` };
   XLSX.utils.book_append_sheet(wb, ws2, '거래내역');
 
   XLSX.writeFile(wb, `${fileBase(imp.periodLabel)}.xlsx`);

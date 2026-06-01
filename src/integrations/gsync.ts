@@ -24,8 +24,8 @@ import {
 } from './google';
 import { won, isShared, memberOf, uid } from '../util';
 import { computeSettlement } from '../settlement/engine';
-import { writeCover } from './gsheet-design';
-import type { YearOverview, MonthSummary } from './gsheet-design';
+import { writeCover, writeMonthView, C, MEMBER_RGB } from './gsheet-design';
+import type { YearOverview, MonthSummary, MonthViewItem } from './gsheet-design';
 
 function yearOf(period: string): string {
   return period.split('.')[0] || period.slice(0, 4);
@@ -168,37 +168,51 @@ export async function collectYearOverview(
 
 async function writeView(sid: string, e: HistoryEntry, members: Member[]): Promise<void> {
   const v = viewTab(e.periodLabel);
-  await ensureTab(sid, v);
-  await clearTab(sid, v);
+  const vid = await ensureTab(sid, v);
 
   const s = e.settlement;
   const nameOf = (id: string): string =>
     e.memberNames[id] ?? members.find((m) => m.id === id)?.name ?? id;
-  const rows: (string | number)[][] = [];
+  const idxOf = (id: string): number => Math.max(0, members.findIndex((m) => m.id === id));
+  const items = (e.snapshot?.items ?? []).filter((it) => !it.excluded);
+  const personalTotal = Object.values(s.perMemberPersonal).reduce((a, b) => a + b, 0);
 
-  rows.push([`${e.periodLabel} 정산`, '', '', '']);
-  rows.push(['', '', '', '']);
+  const viewItems: MonthViewItem[] = items.map((it) => {
+    const shared = isShared(it.assign);
+    const mid = memberOf(it.assign) ?? '';
+    return {
+      date: it.date,
+      merchant: it.merchant,
+      category: it.category ?? '',
+      who: shared ? '공용' : nameOf(mid),
+      whoColor: shared ? C.indigo : MEMBER_RGB[idxOf(mid) % MEMBER_RGB.length],
+      net: it.net,
+      installmentMonths: it.installment ? it.installmentMonths : 0,
+      cancel: it.cancel,
+    };
+  });
 
-  if (!s.solo) {
-    for (const o of s.owed) {
-      rows.push([`${nameOf(o.memberId)} → ${nameOf(s.payerId)}`, won(o.amount), '', '']);
-    }
-  }
-  rows.push(['카드 총청구(net)', won(s.cardTotalNet), '', '']);
-  rows.push(['공용 합계', won(s.sharedTotal), '', '']);
-  rows.push(['', '', '', '']);
-
-  rows.push(['공용 카테고리별', '', '', '']);
-  for (const c of s.byCategoryShared) rows.push([c.category, won(c.amount), '', '']);
-  rows.push(['', '', '', '']);
-
-  rows.push(['일자', '가맹점', '금액(net)', '분류']);
-  for (const it of (e.snapshot?.items ?? []).filter((x) => !x.excluded)) {
-    const who = isShared(it.assign) ? '공용' : nameOf(memberOf(it.assign) ?? '');
-    rows.push([it.date, it.merchant, won(it.net), who + (it.category ? ' · ' + it.category : '')]);
-  }
-
-  await writeRange(sid, `'${v}'!A1`, rows);
+  await writeMonthView(sid, {
+    vid,
+    periodLabel: e.periodLabel,
+    periodStart: e.snapshot?.periodStart ?? '',
+    periodEnd: e.snapshot?.periodEnd ?? '',
+    generatedAt: nowStamp(),
+    solo: s.solo,
+    cardTotalNet: s.cardTotalNet,
+    sharedTotal: s.sharedTotal,
+    personalTotal,
+    owed: s.owed.map((o) => ({ name: nameOf(o.memberId), amount: o.amount })),
+    payerName: nameOf(s.payerId),
+    categories: s.byCategoryShared.map((c) => ({
+      name: c.category,
+      amount: c.amount,
+      pct: s.sharedTotal ? c.amount / s.sharedTotal : 0,
+    })),
+    items: viewItems,
+    txCount: items.length,
+    netSum: items.reduce((a, it) => a + it.net, 0),
+  });
 }
 
 /** 로컬 기록 전체를 시트로 올림(스냅샷 있는 것만). 올린 개수 반환. */
