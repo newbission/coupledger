@@ -21,6 +21,8 @@ import {
   setRoute,
   setTheme,
   updateMember,
+  connectGoogle,
+  importBackupJSON,
 } from '../state/store';
 
 const THEMES: { id: ThemeId; label: string; desc: string }[] = [
@@ -138,6 +140,67 @@ export function Onboarding(): HTMLElement {
       null,
       '카드 이용내역을 올리면 공용·개인으로 나누고, 한 사람이 결제한 생활비를 깔끔하게 정산해 드려요.',
     ),
+  );
+
+  // ---- 기존 기록 불러오기 (설정 없이 외부에서 가져오기) ----
+  const importStatus = el('span', { class: 'muted', style: { fontSize: '12px' } }, '');
+  const fileInput = el('input', {
+    type: 'file',
+    accept: '.json,application/json',
+    style: { display: 'none' },
+    onChange: async (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        importBackupJSON(await file.text());
+        setConfig({ onboarded: true });
+        setRoute('app');
+        toast('백업에서 멤버·기록을 불러왔어요');
+      } catch (err) {
+        importStatus.textContent = '가져오기 실패: ' + (err instanceof Error ? err.message : '');
+      }
+    },
+  }) as HTMLInputElement;
+
+  const fromGoogle = async (): Promise<void> => {
+    try {
+      importStatus.textContent = '구글 연결·불러오는 중…';
+      const r = await connectGoogle(); // 폴더 선택 → 시트 기록 pull(+멤버 정합)
+      if (!r) {
+        importStatus.textContent = '연결을 취소했어요.';
+        return;
+      }
+      setConfig({ onboarded: true });
+      setRoute('app');
+      toast(
+        r.added + r.updated
+          ? `구글에서 기록 ${r.added + r.updated}개를 불러왔어요`
+          : '구글 연결됨 · 시트엔 아직 기록이 없어요',
+      );
+    } catch (err) {
+      importStatus.textContent = '실패: ' + (err instanceof Error ? err.message : '');
+    }
+  };
+
+  const importCard = el(
+    'div',
+    { class: 'connect-invite', style: { marginBottom: '4px' } },
+    el('div', { class: 'ci-head' }, el('strong', { text: '이미 쓰던 기록이 있나요?' })),
+    el('p', { class: 'ci-desc', text: '구글 시트나 백업 파일에서 멤버·기록을 그대로 불러와요. 직접 설정 안 해도 돼요.' }),
+    el(
+      'div',
+      { class: 'row', style: { gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
+      el('button', { class: 'btn btn-primary btn-sm', type: 'button', onClick: () => { void fromGoogle(); } }, '구글에서 불러오기'),
+      el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => fileInput.click() }, '백업 파일(JSON)'),
+      importStatus,
+    ),
+    fileInput,
+  );
+
+  const orDivider = el(
+    'div',
+    { class: 'muted center', style: { fontSize: '11.5px', fontWeight: '700', margin: '2px 0' } },
+    '— 또는 직접 시작 —',
   );
 
   // ---- 이름 스토리 (coupledger = couple + ledger, le 강조) ----
@@ -310,6 +373,8 @@ export function Onboarding(): HTMLElement {
     'div',
     { class: 'onboarding' },
     hero,
+    importCard,
+    orDivider,
     story,
     cardSection,
     themeSection,
