@@ -33,6 +33,22 @@ export function memberOf(a: Assignment): string | null {
   return a === 'shared' ? null : a.member;
 }
 
+/** CSS 변수 실제 값(현재 테마 반영). cssVarColor('m1') → '#5B8DEF' */
+export function cssVarColor(varName: string): string {
+  if (typeof document === 'undefined') return '#666666';
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--' + varName).trim();
+  return v || '#666666';
+}
+
+/** '#RRGGBB' → {red,green,blue} 0..1 (Sheets API 색) */
+export function hexToRgb01(hex: string): { red: number; green: number; blue: number } {
+  let h = hex.replace('#', '').trim();
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h, 16);
+  if (h.length !== 6 || Number.isNaN(n)) return { red: 0.4, green: 0.4, blue: 0.4 };
+  return { red: ((n >> 16) & 255) / 255, green: ((n >> 8) & 255) / 255, blue: (n & 255) / 255 };
+}
+
 type Child = Node | string | null | undefined | false;
 interface ElProps {
   class?: string;

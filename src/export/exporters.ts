@@ -2,7 +2,14 @@
 // CSV는 export/csv.ts. 한 달치(ImportResult + SettlementResult)를 받는다.
 import * as XLSX from 'xlsx-js-style';
 import type { ImportResult, Member, SettlementResult } from '../types';
-import { won, isShared, memberOf } from '../util';
+import { won, isShared, memberOf, cssVarColor } from '../util';
+
+/** 멤버 분류 색 — 설정에서 고른 실제 멤버 색(--mN), 공용은 --shared. # 없는 6자리. */
+function classColor(members: Member[], id: string | null): string {
+  if (id == null) return cssVarColor('shared').replace('#', '');
+  const m = members.find((x) => x.id === id);
+  return (m ? cssVarColor(m.colorVar) : '#6B7280').replace('#', '');
+}
 
 function nameMap(members: Member[]): (id: string) => string {
   return (id) => members.find((m) => m.id === id)?.name ?? id;
@@ -200,7 +207,7 @@ export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementRe
       const personal = s.perMemberPersonal[m.id] ?? 0;
       const shared = o ? o.sharedShare : Math.round((s.sharedTotal * (m.weight || 1)) / totalW);
       const isPayer = m.id === s.payerId;
-      const nameSty = td(z, { font: { name: XFONT, sz: 10, bold: true, color: { rgb: XC.ink } } });
+      const nameSty = td(z, { font: { name: XFONT, sz: 10, bold: true, color: { rgb: classColor(members, m.id) } } });
       R.push([
         { v: m.name + (isPayer ? ' (결제자)' : ''), s: nameSty },
         { v: shared, s: td(z, { alignment: { vertical: 'center', horizontal: 'right' } }), z: KRW },
@@ -250,7 +257,7 @@ export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementRe
     const z = i % 2 === 1;
     const shared = isShared(it.assign);
     const whoName = it.excluded ? '제외' : shared ? '공용' : nameOf(memberOf(it.assign) ?? '');
-    const whoColor = it.excluded ? XC.faint : shared ? XC.ink : XC.sub;
+    const whoColor = it.excluded ? XC.faint : classColor(members, shared ? null : memberOf(it.assign));
     T.push([
       { v: it.date, s: td(z, { font: { name: XFONT, sz: 10, color: { rgb: XC.sub } } }) },
       { v: it.merchant, s: td(z) },

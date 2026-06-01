@@ -22,9 +22,9 @@ import {
   readRange,
   listFolderSheets,
 } from './google';
-import { won, isShared, memberOf, uid } from '../util';
+import { won, isShared, memberOf, uid, cssVarColor, hexToRgb01 } from '../util';
 import { computeSettlement } from '../settlement/engine';
-import { writeCover, writeMonthView, C, MEMBER_RGB } from './gsheet-design';
+import { writeCover, writeMonthView } from './gsheet-design';
 import type { YearOverview, MonthSummary, MonthViewItem } from './gsheet-design';
 
 function yearOf(period: string): string {
@@ -173,9 +173,12 @@ async function writeView(sid: string, e: HistoryEntry, members: Member[]): Promi
   const s = e.settlement;
   const nameOf = (id: string): string =>
     e.memberNames[id] ?? members.find((m) => m.id === id)?.name ?? id;
-  const idxOf = (id: string): number => Math.max(0, members.findIndex((m) => m.id === id));
   const items = (e.snapshot?.items ?? []).filter((it) => !it.excluded);
   const personalTotal = Object.values(s.perMemberPersonal).reduce((a, b) => a + b, 0);
+  // 멤버 분류 색은 설정에서 고른 실제 멤버 색(--mN)/공용색(--shared)을 그대로 사용.
+  const sharedRgb = hexToRgb01(cssVarColor('shared'));
+  const memberRgb = (id: string): { red: number; green: number; blue: number } =>
+    hexToRgb01(cssVarColor(members.find((m) => m.id === id)?.colorVar ?? 'm1'));
 
   const viewItems: MonthViewItem[] = items.map((it) => {
     const shared = isShared(it.assign);
@@ -185,7 +188,7 @@ async function writeView(sid: string, e: HistoryEntry, members: Member[]): Promi
       merchant: it.merchant,
       category: it.category ?? '',
       who: shared ? '공용' : nameOf(mid),
-      whoColor: shared ? C.indigo : MEMBER_RGB[idxOf(mid) % MEMBER_RGB.length],
+      whoColor: shared ? sharedRgb : memberRgb(mid),
       net: it.net,
       installmentMonths: it.installment ? it.installmentMonths : 0,
       cancel: it.cancel,

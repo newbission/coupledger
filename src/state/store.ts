@@ -597,9 +597,60 @@ export function findHistoryByPeriod(label: string): HistoryEntry | null {
 }
 
 /** 외부(시트)에서 가져온 기록을 로컬에 병합. 같은 달은 savedAt 최신본 우선(last-write-wins). */
+/** 시트에서 온 기록의 멤버를 이름으로 현재 설정에 맞춤(없으면 추가). */
+function reconcileMembersFromEntries(entries: HistoryEntry[]): void {
+  const names = new Set<string>();
+  for (const e of entries) {
+    for (const id of Object.keys(e.memberNames || {})) {
+      const nm = e.memberNames[id];
+      if (nm) names.add(nm);
+    }
+  }
+  let changed = false;
+  for (const name of names) {
+    if (!state.config.members.some((m) => m.name === name)) {
+      state.config.members.push({
+        id: uid(),
+        name,
+        colorVar: nextColorVar(state.config.members),
+        isPayer: false,
+        weight: 1,
+      });
+      changed = true;
+    }
+  }
+  if (changed) {
+    if (!state.config.members.some((m) => m.isPayer)) state.config.members[0].isPayer = true;
+    persistConfig();
+  }
+}
+
+/** 기록의 멤버 ID(저장 당시)를 현재 멤버 ID로 이름 기준 재매핑 + 정산 재계산. */
+function remapEntryMembers(e: HistoryEntry, idByName: Map<string, string>): void {
+  if (!e.snapshot) return;
+  const remap = (savedId: string): string => {
+    const nm = e.memberNames[savedId];
+    return (nm && idByName.get(nm)) || savedId;
+  };
+  for (const it of e.snapshot.items) {
+    if (it.assign !== 'shared') it.assign = { member: remap(it.assign.member) };
+  }
+  const nn: Record<string, string> = {};
+  for (const sid of Object.keys(e.memberNames)) nn[remap(sid)] = e.memberNames[sid];
+  e.memberNames = nn;
+  e.settlement = computeSettlement(e.snapshot.items, state.config.members);
+  e.cardTotalNet = e.settlement.cardTotalNet;
+  e.itemCount = e.snapshot.items.filter((it) => !it.excluded).length;
+}
+
 export function mergeHistoryEntries(
   incoming: HistoryEntry[],
 ): { added: number; updated: number; skipped: number } {
+  // 멤버 정합성: 시트의 멤버를 현재 설정에 맞춰 ID 재매핑(다른 기기/재설치에서 분류 유지).
+  reconcileMembersFromEntries(incoming);
+  const idByName = new Map(state.config.members.map((m) => [m.name, m.id]));
+  for (const e of incoming) remapEntryMembers(e, idByName);
+
   let added = 0;
   let updated = 0;
   let skipped = 0;
