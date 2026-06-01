@@ -27,7 +27,13 @@ import {
   importBackupJSON,
   resetAll,
 } from '../state/store';
-import { requestToken, createSpreadsheet, writeRange } from '../integrations/google';
+import {
+  requestToken,
+  pickFolder,
+  findOrCreateSheetInFolder,
+  ensureTab,
+  writeRange,
+} from '../integrations/google';
 import { GOOGLE_API_KEY } from '../integrations/google-config';
 
 // 멤버 색 슬롯(테마 팔레트 m1..m6).
@@ -536,12 +542,20 @@ function googleSection(): HTMLElement {
         try {
           statusEl.textContent = '구글 로그인 중…';
           await requestToken(true);
-          statusEl.textContent = '시트 생성 중…';
-          const id = await createSpreadsheet('coupledger 연결 테스트');
-          await writeRange(id, 'A1', [
+          statusEl.textContent = '폴더를 선택하세요…';
+          const folder = await pickFolder();
+          if (!folder) {
+            statusEl.textContent = '폴더 선택을 취소했어요.';
+            return;
+          }
+          const year = String(new Date().getFullYear());
+          statusEl.textContent = `'${folder.name}'에 ${year} 시트 준비 중…`;
+          const id = await findOrCreateSheetInFolder(folder.id, year);
+          await ensureTab(id, '연결테스트');
+          await writeRange(id, "'연결테스트'!A1", [
             ['coupledger 연결 성공', new Date().toLocaleString('ko-KR')],
           ]);
-          statusEl.textContent = '연결 성공! 새 탭에서 시트를 열었어요.';
+          statusEl.textContent = `성공! '${folder.name} / ${year}' 시트에 기록했어요.`;
           toast('구글시트 연결 성공');
           window.open('https://docs.google.com/spreadsheets/d/' + id, '_blank');
         } catch (e) {
@@ -551,7 +565,7 @@ function googleSection(): HTMLElement {
       },
     },
     svg(15, '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/>'),
-    '구글 로그인 + 연결 테스트',
+    '로그인 + 폴더 선택 + 연결 테스트',
   );
 
   return el(

@@ -1,7 +1,7 @@
 // ===== 구글 Sheets/Drive 연동 (브라우저 OAuth, 서버 없음) =====
 // Google Identity Services(GIS) 토큰 방식 → 액세스 토큰은 메모리에만(localStorage 저장 안 함).
 // REST는 fetch로 직접 호출. 비밀키 없음.
-import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from './google-config';
+import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES, GOOGLE_API_KEY } from './google-config';
 
 interface TokenClient {
   callback: (resp: { access_token?: string; expires_in?: number; error?: string }) => void;
@@ -19,9 +19,12 @@ interface GoogleNS {
     };
   };
 }
+// Picker/gapi 는 외부 위젯이라 느슨하게 타입.
+type AnyObj = Record<string, unknown> & { [k: string]: unknown };
 declare global {
   interface Window {
-    google?: { accounts?: GoogleNS['accounts'] };
+    google?: { accounts?: GoogleNS['accounts']; picker?: AnyObj };
+    gapi?: { load: (name: string, cfg: { callback: () => void; onerror?: () => void }) => void };
   }
 }
 
@@ -162,4 +165,81 @@ export async function readRange(spreadsheetId: string, range: string): Promise<s
     )}`,
   );
   return r.values || [];
+}
+
+// ---------- Drive (폴더) ----------
+
+const DRIVE = 'https://www.googleapis.com/drive/v3';
+
+/** 폴더 내 스프레드시트 목록 */
+export async function listFolderSheets(
+  folderId: string,
+): Promise<{ id: string; name: string }[]> {
+  const q = encodeURIComponent(
+    `'${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+  );
+  const r = await api<{ files?: { id: string; name: string }[] }>(
+    `${DRIVE}/files?q=${q}&fields=files(id,name)`,
+  );
+  return r.files || [];
+}
+
+/** 폴더 안에서 name 시트를 찾고 없으면 생성(생성 후 폴더로 이동) → spreadsheetId */
+export async function findOrCreateSheetInFolder(folderId: string, name: string): Promise<string> {
+  const hit = (await listFolderSheets(folderId)).find((f) => f.name === name);
+  if (hit) return hit.id;
+  const id = await createSpreadsheet(name);
+  await api(`${DRIVE}/files/${id}?addParents=${folderId}&removeParents=root&fields=id`, {
+    method: 'PATCH',
+  });
+  return id;
+}
+
+// ---------- Picker (폴더 선택) ----------
+
+let pickerLoaded = false;
+async function ensurePicker(): Promise<void> {
+  if (pickerLoaded && window.google?.picker) return;
+  await loadScript('https://apis.google.com/js/api.js');
+  await new Promise<void>((resolve, reject) => {
+    if (!window.gapi) {
+      reject(new Error('gapi 로드 실패'));
+      return;
+    }
+    window.gapi.load('picker', {
+      callback: () => resolve(),
+      onerror: () => reject(new Error('Picker 로드 실패')),
+    });
+  });
+  pickerLoaded = true;
+}
+
+/** 폴더 선택 Picker → {id, name} (취소 시 null) */
+export async function pickFolder(): Promise<{ id: string; name: string } | null> {
+  if (!GOOGLE_API_KEY) throw new Error('API 키가 없어요(Picker)');
+  const t = await token();
+  await ensurePicker();
+  // 외부 위젯이라 any 로 다룸.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const picker = window.google!.picker as any;
+  return new Promise((resolve) => {
+    const view = new picker.DocsView(picker.ViewId.FOLDERS)
+      .setSelectFolderEnabled(true)
+      .setIncludeFolders(true)
+      .setMimeTypes('application/vnd.google-apps.folder');
+    new picker.PickerBuilder()
+      .addView(view)
+      .setOAuthToken(t)
+      .setDeveloperKey(GOOGLE_API_KEY)
+      .setTitle('정산을 저장할 폴더 선택')
+      .setCallback((data: { action: string; docs?: { id: string; name: string }[] }) => {
+        if (data.action === picker.Action.PICKED && data.docs && data.docs[0]) {
+          resolve({ id: data.docs[0].id, name: data.docs[0].name });
+        } else if (data.action === picker.Action.CANCEL) {
+          resolve(null);
+        }
+      })
+      .build()
+      .setVisible(true);
+  });
 }
