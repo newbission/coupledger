@@ -33,6 +33,40 @@ const expanded = new Set<string>();
 /** '직접 추가' 인라인 폼 펼침 여부(재렌더 사이 유지) */
 let manualFormOpen = false;
 
+// ---------- 정렬(헤더 클릭) ----------
+
+type SortKey = 'date' | 'merchant' | 'category' | 'amount';
+/** null = 원본 순서(엑셀 그대로, 보통 최신순) */
+let sortKey: SortKey | null = null;
+let sortDir: 'asc' | 'desc' = 'desc';
+
+function sortItems(arr: LineItem[]): LineItem[] {
+  if (!sortKey) return arr;
+  const key = sortKey;
+  const dir = sortDir === 'asc' ? 1 : -1;
+  const val = (it: LineItem): string | number => {
+    switch (key) {
+      case 'date':
+        return it.date;
+      case 'merchant':
+        return it.merchant;
+      case 'category':
+        return it.category ?? '￿'; // 미분류는 맨 뒤로
+      case 'amount':
+        return it.net;
+    }
+  };
+  return [...arr].sort((a, b) => {
+    const av = val(a);
+    const bv = val(b);
+    const c =
+      typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv), 'ko');
+    return c * dir;
+  });
+}
+
 // ---------- 분류 판정 헬퍼 ----------
 
 function isPersonal(it: LineItem): boolean {
@@ -931,26 +965,61 @@ export function TransactionList(): HTMLElement {
 
   // 테이블.
   const tbody = el('tbody');
+  const theadTr = el('tr', {});
   const table = el(
     'table',
     { class: 'txn-table' },
-    el(
-      'thead',
-      {},
-      el(
-        'tr',
-        {},
-        el('th', { style: { width: '64px' } }, '일자'),
-        el('th', {}, '가맹점'),
-        el('th', { style: { width: '170px' } }, '카테고리'),
-        el('th', { class: 'r', style: { width: '120px' } }, '금액'),
-        el('th', { style: { width: '150px' } }, '분류'),
-        el('th', { style: { width: '92px' } }, '분할'),
-      ),
-    ),
+    el('thead', {}, theadTr),
     tbody,
   );
   section.append(el('div', {}, table));
+
+  // 정렬 가능한 헤더 셀(클릭 시 오름/내림 토글 + 화살표).
+  function sortTh(
+    label: string,
+    key: SortKey,
+    opts?: { width?: string; right?: boolean },
+  ): HTMLElement {
+    const active = sortKey === key;
+    const arrow = active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    const style: Record<string, string> = {
+      cursor: 'pointer',
+      userSelect: 'none',
+      whiteSpace: 'nowrap',
+    };
+    if (opts?.width) style.width = opts.width;
+    if (active) style.color = 'var(--accent-deep)';
+    return el(
+      'th',
+      {
+        class: opts?.right ? 'r' : undefined,
+        style,
+        title: '클릭하여 정렬',
+        onClick: () => {
+          if (sortKey === key) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortKey = key;
+            sortDir = key === 'amount' || key === 'date' ? 'desc' : 'asc';
+          }
+          renderHead();
+          renderRows();
+        },
+      },
+      label + arrow,
+    );
+  }
+
+  function renderHead(): void {
+    theadTr.replaceChildren(
+      sortTh('일자', 'date', { width: '64px' }),
+      sortTh('가맹점', 'merchant'),
+      sortTh('카테고리', 'category', { width: '170px' }),
+      sortTh('금액', 'amount', { width: '120px', right: true }),
+      el('th', { style: { width: '150px' } }, '분류'),
+      el('th', { style: { width: '92px' } }, '분할'),
+    );
+  }
 
   // 빈 상태 안내(필터/검색 결과 0건) 슬롯.
   const empty = el(
@@ -966,7 +1035,7 @@ export function TransactionList(): HTMLElement {
   // 행 렌더(필터+검색 적용). store 변경 없이 검색 입력 때 호출 가능.
   function renderRows(): void {
     tbody.replaceChildren();
-    const shown = items.filter((it) => matchesFilter(it) && matchesSearch(it));
+    const shown = sortItems(items.filter((it) => matchesFilter(it) && matchesSearch(it)));
     if (shown.length === 0) {
       empty.style.display = 'block';
     } else {
@@ -977,6 +1046,7 @@ export function TransactionList(): HTMLElement {
     }
   }
 
+  renderHead();
   renderRows();
 
   return section;
