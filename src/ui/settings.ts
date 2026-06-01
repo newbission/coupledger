@@ -553,8 +553,20 @@ function googleSection(): HTMLElement {
               status.textContent = '폴더 선택을 취소했어요.';
               return;
             }
+            // 연결 즉시 폴더의 시트 기록을 자동으로 가져와 history에 채움.
+            let msg = '구글 연결됨 · ' + folder.name;
+            status.textContent = '연결됨 · 시트에서 기록 가져오는 중…';
+            try {
+              const pulled = await pullAll(folder.id);
+              if (pulled.length) {
+                const { added, updated } = mergeHistoryEntries(pulled);
+                if (added + updated) msg += ` · 기록 ${added + updated}개 가져옴`;
+              }
+            } catch {
+              msg += ' · (자동 불러오기 실패 — 아래 버튼으로 재시도)';
+            }
             setConfig({ gdrive: { folderId: folder.id, folderName: folder.name } });
-            toast('구글 연결됨 · ' + folder.name);
+            toast(msg);
           } catch (e) {
             status.textContent = '실패: ' + (e instanceof Error ? e.message : String(e));
             toast('연결 실패 — 상태 메시지 확인', 'info');
@@ -634,8 +646,18 @@ function googleSection(): HTMLElement {
         try {
           const f = await pickFolder();
           if (f) {
+            let msg = '폴더 변경됨 · ' + f.name;
+            try {
+              const pulled = await pullAll(f.id);
+              if (pulled.length) {
+                const { added, updated } = mergeHistoryEntries(pulled);
+                if (added + updated) msg += ` · 기록 ${added + updated}개 가져옴`;
+              }
+            } catch {
+              /* 변경은 됐고 자동 불러오기만 실패 */
+            }
             setConfig({ gdrive: { folderId: f.id, folderName: f.name } });
-            toast('폴더 변경됨 · ' + f.name);
+            toast(msg);
           }
         } catch (e) {
           toast('실패: ' + (e instanceof Error ? e.message : ''), 'info');
