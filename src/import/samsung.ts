@@ -3,7 +3,7 @@
 //  - 상세시트 '■ 국내이용내역' 의 데이터행을 RawTxn 으로 변환.
 //  - 같은 승인번호(approvalNo)의 원거래/취소행을 하나의 LineItem 으로 netting.
 //  - 요약시트 '■ 카드이용내역' 의 조회기간이 있으면 기간 라벨/범위로 우선 사용.
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import type {
   CancelKind,
   ImportResult,
