@@ -514,6 +514,92 @@ a { color: inherit; text-decoration: none; }
 .settle-panel h3 { font-size: 13.5px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.01em; }
 .settle-panel .h-desc { font-size: 11.5px; color: var(--faint); margin-bottom: 14px; }
 
+/* ── settle-bar: 결과 + 보조지표 + 상태칩 ── */
+.settle-result { align-items: center; }
+.settle-bar-metric {
+  display: flex; flex-direction: column; line-height: 1.15;
+  padding-left: 16px; border-left: 1px solid var(--line);
+}
+.settle-bar-metric .k { font-size: 11px; font-weight: 700; color: var(--faint); }
+.settle-bar-metric .v { font-size: 15px; font-weight: 800; color: var(--ink); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.sync-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: var(--radius-pill);
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.sync-chip svg { display: block; }
+.sync-chip.is-none  { background: var(--surface-2); color: var(--faint); }
+.sync-chip.is-saved { background: var(--surface-2); color: var(--sub); }
+.sync-chip.is-ok    { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); color: var(--ok); }
+.sync-chip.is-flight{ background: var(--accent-soft); color: var(--accent-deep); }
+.sync-chip.is-flight svg { animation: spin .9s linear infinite; }
+.sync-chip.is-fail  { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); }
+
+/* ── save panel: 확정 + 상태 + 연결 ── */
+.save-panel { display: flex; flex-direction: column; gap: 12px; }
+.btn-block { width: 100%; justify-content: center; }
+.btn-xs { padding: 3px 9px; font-size: 11px; border-radius: var(--radius); }
+
+.connect-chip {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--sub);
+  background: var(--accent-soft); border-radius: var(--radius); padding: 8px 12px;
+}
+.connect-chip svg { color: var(--accent-deep); }
+.connect-chip .cc-folder { color: var(--accent-deep); font-weight: 700; text-decoration: none; }
+.connect-chip .cc-folder:hover { text-decoration: underline; }
+
+.status-line {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; min-height: 18px;
+}
+.status-line svg { display: block; flex: 0 0 auto; }
+.status-line.is-hint  { color: var(--faint); font-weight: 500; }
+.status-line.is-flight{ color: var(--accent-deep); }
+.status-line.is-flight svg { animation: spin .9s linear infinite; }
+.status-line.is-ok    { color: var(--ok); }
+.status-line.is-local { color: var(--sub); }
+.status-line.is-fail  { color: var(--danger); }
+.status-line .sl-open {
+  display: inline-flex; align-items: center; gap: 3px;
+  color: var(--accent-deep); text-decoration: none; font-weight: 700; margin-left: 4px;
+}
+.status-line .sl-open:hover { text-decoration: underline; }
+
+.connect-invite {
+  background: var(--accent-soft); border: 1px solid var(--line);
+  border-left: 3px solid var(--warn); border-radius: var(--radius); padding: 14px;
+}
+.connect-invite .ci-head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; color: var(--ink); }
+.connect-invite .ci-head svg { color: var(--accent-deep); }
+.connect-invite .ci-desc { font-size: 12.5px; color: var(--sub); margin: 6px 0 12px; }
+
+.export-row { border-top: 1px solid var(--line); padding-top: 12px; }
+.export-bar .export-label { font-size: 11.5px; font-weight: 700; }
+
+.card-sync { font-size: 11.5px; font-weight: 700; text-decoration: none; }
+.card-sync.is-ok { color: var(--ok); }
+.card-sync.is-flight { color: var(--accent-deep); }
+.tag-synced { background: color-mix(in srgb, var(--ok) 16%, var(--surface)) !important; color: var(--ok) !important; }
+
+/* ── modal ── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: color-mix(in srgb, var(--ink) 40%, transparent);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  backdrop-filter: blur(2px);
+}
+.modal-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  padding: 22px; width: 100%; max-width: 380px;
+}
+.modal-card h3 { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+
 /* ratio / weight slider rows */
 .weight-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .ratio-who, .weight-who {

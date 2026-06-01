@@ -12,7 +12,14 @@
 //   trend 표시는 .badge/.tag 토큰 클래스로 대체(별도 .trend 클래스 신설 안 함).
 import { el, won, comma, toast } from '../util';
 import type { HistoryEntry, SettlementResult } from '../types';
-import { getState, loadHistory, deleteHistory, loadHistoryEntry } from '../state/store';
+import {
+  getState,
+  loadHistory,
+  deleteHistory,
+  loadHistoryEntry,
+  syncEntry,
+  isSyncing,
+} from '../state/store';
 import { exportBar } from './exportbar';
 
 // 카드 클릭 → 비교 대상으로 펼친 항목 id(모듈 로컬, 재렌더 간 유지). null이면 닫힘.
@@ -126,6 +133,7 @@ function cardActions(e: HistoryEntry): HTMLElement {
       },
       '불러오기',
     ),
+    syncAction(e),
     el('span', { class: 'spacer' }),
     el(
       'button',
@@ -144,6 +152,35 @@ function cardActions(e: HistoryEntry): HTMLElement {
       '삭제',
     ),
   );
+}
+
+/** 기록별 시트 동기화 어포던스(연결됐을 때만): 열기 / 올리기 / 동기화중 / 재시도. */
+function syncAction(e: HistoryEntry): Node | null {
+  if (!getState().config.gdrive) return null;
+  if (isSyncing(e.id)) return el('span', { class: 'card-sync is-flight', text: '동기화 중…' });
+  if (e.syncedAt && e.sheetUrl) {
+    return el('a', {
+      class: 'card-sync is-ok',
+      href: e.sheetUrl,
+      target: '_blank',
+      onClick: (ev: Event) => ev.stopPropagation(),
+    }, '✓ 시트 ↗');
+  }
+  const label = e.syncError ? '다시 올리기' : '시트에 올리기';
+  return el('button', {
+    class: 'btn btn-ghost btn-sm',
+    type: 'button',
+    onClick: (ev: Event) => {
+      ev.stopPropagation();
+      if (!e.snapshot) {
+        toast('예전 기록이라 올릴 수 없어요 (다시 저장하면 가능)');
+        return;
+      }
+      void syncEntry(e.id)
+        .then(() => toast(`「${e.periodLabel}」 시트에 올렸어요`))
+        .catch(() => toast('시트 올리기 실패', 'info'));
+    },
+  }, label);
 }
 
 /** 월별 카드 1장. */
@@ -168,6 +205,7 @@ function card(
         style: { fontSize: '9.5px', padding: '1px 7px', background: 'var(--accent-soft)', color: 'var(--accent-deep)' },
         text: '보는 중',
       }),
+    !!e.syncedAt && el('span', { class: 'tag tag-synced', style: { fontSize: '9.5px', padding: '1px 7px' }, text: '✓ 시트' }),
   );
 
   // 대표 정산결과(있으면) / solo면 총지출.
@@ -200,7 +238,7 @@ function card(
     {
       class:
         'history-card' +
-        (isCurrent ? ' is-current' : ' is-placeholder') +
+        (isCurrent ? ' is-current' : '') +
         (isLoaded ? ' is-loaded' : ''),
       type: 'button',
       style: { textAlign: 'left', display: 'block', width: '100%' },
@@ -307,14 +345,14 @@ function comparePanel(e: HistoryEntry, latest: HistoryEntry): HTMLElement {
     ),
   );
 
-  // (불러오기/삭제는 썸네일 cardActions 로 이동)
-  // 내보내기: 이 기록을 Excel/CSV/PDF/구글시트로
+  // (불러오기/삭제/시트는 썸네일 cardActions 로 이동)
+  // 파일 내보내기: 이 기록을 Excel/CSV/PDF로
   if (e.snapshot) {
     panel.append(
       el(
         'div',
         { style: { marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--line)' } },
-        exportBar(e.snapshot, getState().config.members, e.settlement, e),
+        exportBar(e.snapshot, getState().config.members, e.settlement),
       ),
     );
   }

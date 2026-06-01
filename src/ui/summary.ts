@@ -8,8 +8,8 @@
 //   .settle-grid : settle-panel 2개를 나란히 두는 그리드(아래 인라인 style로 처리, 클래스 미사용)
 //   나머지(.settle-bar/.settle-result/.settle-panel/.weight-*/.owed-card/.totals/
 //    .bd-row/.bd-divider/.dot/.cat-bar*/.btn 등)는 모두 base.css 고정 클래스.
-import type { Member, OwedLine, SettlementResult } from '../types';
-import { el, won } from '../util';
+import type { HistoryEntry, Member, OwedLine, SettlementResult } from '../types';
+import { el, won, toast } from '../util';
 import {
   getState,
   getSettlement,
@@ -18,8 +18,35 @@ import {
   updateMember,
   saveCurrentToHistory,
   findHistoryByPeriod,
+  syncEntry,
+  isSyncing,
+  connectGoogle,
+  setRoute,
 } from '../state/store';
 import { exportBar } from './exportbar';
+
+// 작은 stroke 아이콘(현재색 상속).
+function ico(d: string, size = 14): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.innerHTML = d;
+  return svg;
+}
+const ICON = {
+  sheet: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  cloudOff: '<path d="M2 2l20 20M5.8 5.8A6 6 0 0 0 8 17h9a4 4 0 0 0 1.8-7.6"/>',
+  alert: '<path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+  open: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  spin: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/>',
+};
 
 // ---------- 공통 헬퍼 ----------
 
@@ -85,22 +112,28 @@ export function SettlementBar(): HTMLElement {
 
   bar.append(result, el('span', { class: 'spacer' }));
 
-  // 카드 총청구(net)
+  // 카드 총청구(취소 반영) — 결과 옆 보조 지표
   bar.append(
-    el('div', { class: 'bd-row', style: { fontSize: '12.5px', marginLeft: '0' } },
-      el('span', { class: 'k muted', text: '카드 총청구(net)' }),
-      el('span', { class: 'v num', text: ' ' + won(s.cardTotalNet), style: { marginLeft: '8px' } }),
+    el('div', { class: 'settle-bar-metric' },
+      el('span', { class: 'k', text: '카드 총청구' }),
+      el('span', { class: 'v num', text: won(s.cardTotalNet) }),
     ),
   );
 
-  // 저장 버튼(요약 패널의 저장 흐름과 동일)
-  bar.append(
-    el('button', { class: 'btn btn-primary', onClick: () => saveFlow() },
-      '이번 달 정산 저장',
-    ),
-  );
+  // 저장 상태 칩(저장됨/동기화/미저장)
+  const imp = getState().session.import;
+  if (imp) bar.append(statusChip(findHistoryByPeriod(imp.periodLabel)));
 
   return bar;
+}
+
+/** 상단 바의 작은 저장/동기화 상태 칩. */
+function statusChip(entry: HistoryEntry | null): HTMLElement {
+  if (!entry) return el('span', { class: 'sync-chip is-none' }, '미저장');
+  if (isSyncing(entry.id)) return el('span', { class: 'sync-chip is-flight' }, ico(ICON.spin, 12), '동기화 중');
+  if (entry.syncError) return el('span', { class: 'sync-chip is-fail' }, ico(ICON.alert, 12), '동기화 실패');
+  if (entry.syncedAt) return el('span', { class: 'sync-chip is-ok' }, ico(ICON.check, 12), '시트 저장됨');
+  return el('span', { class: 'sync-chip is-saved' }, ico(ICON.check, 12), '저장됨');
 }
 
 // ---------- SettlementSummary : 상세 패널 ----------
@@ -374,45 +407,165 @@ function bdRow(
 // ----- 저장 & 내보내기 패널 -----
 
 function exportPanel(s: SettlementResult): HTMLElement {
-  const panel = el('div', { class: 'settle-panel', style: { marginTop: '14px' } });
+  const panel = el('div', { class: 'settle-panel save-panel' });
   const imp = getState().session.import;
   const members = getState().config.members;
+  const gdrive = getState().config.gdrive;
+  const entry = imp ? findHistoryByPeriod(imp.periodLabel) : null;
 
-  // 로컬 기록 저장(localStorage)
-  panel.append(
-    el(
-      'div',
-      { class: 'row', style: { flexWrap: 'wrap', gap: '12px', alignItems: 'center' } },
-      el('button', { class: 'btn btn-primary', onClick: () => saveFlow() },
-        s.solo ? '이번 달 기록 저장 (로컬)' : '이번 달 정산 저장 (로컬)',
+  // 연결됨: 자동 백업 칩 / 미연결: (아래 invite 카드)
+  if (gdrive) {
+    panel.append(
+      el('div', { class: 'connect-chip' },
+        ico(ICON.sheet, 14),
+        el('span', { text: '구글 시트 자동 백업 · ' }),
+        el('a', { href: 'https://drive.google.com/drive/folders/' + gdrive.folderId, target: '_blank', class: 'cc-folder' }, gdrive.folderName),
+        el('span', { class: 'spacer' }),
+        el('button', { class: 'btn btn-ghost btn-xs', onClick: () => setRoute('settings') }, '연결 관리'),
       ),
-      el('span', { class: 'spacer' }),
-      el('span', { class: 'sec-desc', text: '기록은 이 브라우저에만 저장돼요' }),
+    );
+  }
+
+  // 단일 1차 액션 — 확정(저장 + 연결 시 자동 동기화)
+  panel.append(
+    el('button', { class: 'btn btn-primary btn-block', onClick: () => saveFlow() },
+      s.solo ? '이번 달 가계부 확정' : '이번 달 정산 확정',
     ),
   );
 
-  // 파일/시트 내보내기 (Excel · CSV · PDF · 구글 시트)
+  // 저장/동기화 상태 줄
+  panel.append(statusLine(entry, !!gdrive));
+
+  // 미연결: 연결 유도 카드
+  if (!gdrive) panel.append(connectInvite());
+
+  // 파일 내보내기 (Excel · CSV · PDF)
   if (imp) {
-    panel.append(el('div', { style: { marginTop: '10px' } }, exportBar(imp, members, s)));
+    panel.append(el('div', { class: 'export-row' }, exportBar(imp, members, s)));
   }
   return panel;
 }
 
+/** 버튼 아래 한 줄 상태(동기화 중/저장됨+열기/로컬전용/실패+재시도). */
+function statusLine(entry: HistoryEntry | null, connected: boolean): HTMLElement {
+  const line = el('div', { class: 'status-line' });
+  if (!entry) {
+    line.classList.add('is-hint');
+    line.append('확정하면 이번 달 정산이 기록돼요');
+    return line;
+  }
+  if (isSyncing(entry.id)) {
+    line.classList.add('is-flight');
+    line.append(ico(ICON.spin, 13), '구글 시트에 동기화 중…');
+    return line;
+  }
+  if (entry.syncError) {
+    line.classList.add('is-fail');
+    line.append(
+      ico(ICON.alert, 13),
+      '시트 동기화 실패',
+      el('button', { class: 'btn btn-ghost btn-xs', onClick: () => { void syncEntry(entry.id); } }, '다시 시도'),
+    );
+    return line;
+  }
+  if (entry.syncedAt && entry.sheetUrl) {
+    line.classList.add('is-ok');
+    line.append(
+      ico(ICON.check, 13),
+      '구글 시트에 저장됨',
+      el('a', { href: entry.sheetUrl, target: '_blank', class: 'sl-open' }, '시트 열기', ico(ICON.open, 11)),
+    );
+    return line;
+  }
+  if (!connected) {
+    line.classList.add('is-local');
+    line.append(ico(ICON.cloudOff, 13), '이 브라우저에 저장됨 · 구글 연결 시 자동 백업');
+    return line;
+  }
+  line.classList.add('is-ok');
+  line.append(ico(ICON.check, 13), '저장됨 · 동기화 준비 중');
+  return line;
+}
+
+/** 미연결 상태에서 보여주는 연결 유도 카드. */
+function connectInvite(): HTMLElement {
+  return el('div', { class: 'connect-invite' },
+    el('div', { class: 'ci-head' }, ico(ICON.sheet, 16), el('strong', { text: '구글 시트에 자동 백업하기' })),
+    el('p', { class: 'ci-desc', text: '확정한 정산이 자동으로 구글 시트에 저장돼요. 둘이 같은 폴더를 공유하면 함께 볼 수 있어요.' }),
+    el('button', { class: 'btn btn-primary btn-sm', onClick: () => { void connectFlow(); } }, '구글 연결'),
+  );
+}
+
 // ---------- 액션 ----------
 
+async function connectFlow(): Promise<void> {
+  try {
+    const r = await connectGoogle();
+    if (!r) return;
+    let msg = '구글 연결됨 · ' + r.folderName;
+    if (r.added + r.updated) msg += ` · 기록 ${r.added + r.updated}개 가져옴`;
+    toast(msg);
+    // 이번 달이 이미 저장돼 있으면 바로 동기화
+    const imp = getState().session.import;
+    if (imp) {
+      const e = findHistoryByPeriod(imp.periodLabel);
+      if (e) void syncEntry(e.id).catch(() => {});
+    }
+  } catch (e) {
+    toast('연결 실패: ' + (e instanceof Error ? e.message : ''), 'info');
+  }
+}
 
-function saveFlow(): void {
+async function saveFlow(): Promise<void> {
   const imp = getState().session.import;
   if (!imp) return;
-  const existing = findHistoryByPeriod(imp.periodLabel);
-  if (existing) {
-    const replace = window.confirm(
-      `${imp.periodLabel} 기록이 이미 있어요.\n확인 = 덮어쓰기 / 취소 = 새 기록으로 추가`,
-    );
-    saveCurrentToHistory(replace ? 'replace' : 'add');
-  } else {
-    saveCurrentToHistory('add');
+  const s = getSettlement();
+  let mode: 'add' | 'replace' = 'add';
+  if (findHistoryByPeriod(imp.periodLabel)) {
+    const choice = await overwriteModal(imp.periodLabel);
+    if (!choice) return;
+    mode = choice;
   }
+  const id = saveCurrentToHistory(mode); // 즉시 로컬 저장 → 재렌더
+  if (!id) return;
+  toast(s.solo ? '이번 달 가계부를 확정했어요' : '이번 달 정산을 확정했어요');
+  // 연결돼 있으면 백그라운드로 시트 동기화(블로킹 안 함)
+  if (getState().config.gdrive) {
+    syncEntry(id)
+      .then(() => toast('구글 시트에도 저장했어요'))
+      .catch(() => toast('정산은 저장됐고 시트 동기화만 실패했어요', 'info'));
+  }
+}
+
+/** 같은 달 기록이 있을 때 인앱 선택 모달(덮어쓰기/추가/취소). */
+function overwriteModal(period: string): Promise<'replace' | 'add' | null> {
+  return new Promise((resolve) => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Enter') close('replace');
+      else if (e.key === 'Escape') close(null);
+    };
+    const close = (v: 'replace' | 'add' | null): void => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const overlay = el('div', {
+      class: 'modal-overlay',
+      onClick: (e: Event) => { if (e.target === overlay) close(null); },
+    },
+      el('div', { class: 'modal-card' },
+        el('h3', { text: `${period} 기록이 이미 있어요` }),
+        el('p', { class: 'h-desc', text: '이번 달 정산을 어떻게 저장할까요?' }),
+        el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn btn-ghost btn-sm', onClick: () => close(null) }, '취소'),
+          el('button', { class: 'btn btn-ghost btn-sm', onClick: () => close('add') }, '새 기록으로 추가'),
+          el('button', { class: 'btn btn-primary btn-sm', onClick: () => close('replace') }, '덮어쓰기'),
+        ),
+      ),
+    );
+    document.body.append(overlay);
+    document.addEventListener('keydown', onKey);
+  });
 }
 
 // ---------- 작은 계산 헬퍼 ----------

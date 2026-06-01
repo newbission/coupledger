@@ -24,6 +24,8 @@ import {
 } from './google';
 import { won, isShared, memberOf, uid } from '../util';
 import { computeSettlement } from '../settlement/engine';
+import { writeCover } from './gsheet-design';
+import type { YearOverview, MonthSummary } from './gsheet-design';
 
 function yearOf(period: string): string {
   return period.split('.')[0] || period.slice(0, 4);
@@ -76,12 +78,12 @@ function itemRow(it: LineItem): (string | number)[] {
   ];
 }
 
-/** 한 기록(달)을 시트에 저장: 연도 파일 → 숨김 db 탭 + 뷰 탭(둘 다 clear 후 재작성). */
+/** 한 기록(달)을 시트에 저장: 연도 파일 → 숨김 db 탭 + 뷰 탭(둘 다 clear 후 재작성). spreadsheetId 반환. */
 export async function pushEntry(
   folderId: string,
   e: HistoryEntry,
   members: Member[],
-): Promise<void> {
+): Promise<string> {
   const sid = await findOrCreateSheetInFolder(folderId, yearOf(e.periodLabel));
   const items = e.snapshot?.items ?? [];
 
@@ -103,6 +105,65 @@ export async function pushEntry(
 
   // ---- 뷰 탭: 보기 좋은 정산표 ----
   await writeView(sid, e, members);
+
+  // ---- 표지/연간 개요 탭 갱신(장식 실패는 저장을 막지 않음) ----
+  try {
+    const ov = await collectYearOverview(sid, yearOf(e.periodLabel), members.map((m) => m.name));
+    await writeCover(sid, ov);
+  } catch (err) {
+    console.error('표지 갱신 실패(저장은 완료됨):', err);
+  }
+  return sid;
+}
+
+function owedTextOf(e: HistoryEntry): string {
+  const s = e.settlement;
+  const nameOf = (id: string): string => e.memberNames[id] ?? id;
+  if (s.solo || !s.owed.length) return '정산 없음';
+  return s.owed.map((o) => `${nameOf(o.memberId)} → ${nameOf(s.payerId)} ${won(o.amount)}`).join(', ');
+}
+
+function nowStamp(): string {
+  const d = new Date();
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 연도 파일의 모든 숨김 db 탭 → 연간 개요(표지 갱신용). */
+export async function collectYearOverview(
+  spreadsheetId: string,
+  year: string,
+  fallbackMembers: string[],
+): Promise<YearOverview> {
+  const sheets = await getSheets(spreadsheetId);
+  const dbTitles = sheets.filter((s) => HIDDEN_DB.test(s.title)).map((s) => s.title);
+  const entries: HistoryEntry[] = [];
+  for (const t of dbTitles) {
+    try {
+      const rows = await readRange(spreadsheetId, `'${t}'`);
+      const e = rowsToEntry(rows);
+      if (e) entries.push(e);
+    } catch {
+      /* 한 탭 실패는 건너뜀 */
+    }
+  }
+  entries.sort((a, b) => b.periodLabel.localeCompare(a.periodLabel)); // 최신 먼저
+  const months: MonthSummary[] = entries.map((e) => ({
+    period: e.periodLabel,
+    savedAt: e.savedAt,
+    owedText: owedTextOf(e),
+    cardTotalNet: e.settlement.cardTotalNet,
+    sharedTotal: e.settlement.sharedTotal,
+    itemCount: e.itemCount,
+  }));
+  const yearTotals = {
+    settledSum: entries.reduce((a, e) => a + e.settlement.owed.reduce((x, o) => x + o.amount, 0), 0),
+    cardSum: months.reduce((a, m) => a + m.cardTotalNet, 0),
+    sharedSum: months.reduce((a, m) => a + m.sharedTotal, 0),
+    txCount: months.reduce((a, m) => a + m.itemCount, 0),
+  };
+  const members = entries[0] ? Object.values(entries[0].memberNames) : fallbackMembers;
+  return { year, generatedAt: nowStamp(), members, months, yearTotals };
 }
 
 async function writeView(sid: string, e: HistoryEntry, members: Member[]): Promise<void> {

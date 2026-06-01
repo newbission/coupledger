@@ -185,7 +185,9 @@ export async function getSheets(spreadsheetId: string): Promise<SheetInfo[]> {
   }));
 }
 
-async function batchUpdate(spreadsheetId: string, requests: unknown[]): Promise<void> {
+/** Sheets batchUpdate(서식/구조 요청 묶음) */
+export async function batchUpdate(spreadsheetId: string, requests: unknown[]): Promise<void> {
+  if (!requests.length) return;
   await api(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: 'POST',
     body: JSON.stringify({ requests }),

@@ -18,6 +18,8 @@ import type {
 } from '../types';
 import { assignKey, periodOf, uid } from '../util';
 import { computeSettlement } from '../settlement/engine';
+import { pushEntry, pullAll } from '../integrations/gsync';
+import { pickFolder } from '../integrations/google';
 
 // ---------- 상수 ----------
 
@@ -471,9 +473,9 @@ export function loadHistory(): HistoryEntry[] {
   }
 }
 
-export function saveCurrentToHistory(mode: 'add' | 'replace' = 'add'): void {
+export function saveCurrentToHistory(mode: 'add' | 'replace' = 'add'): string | null {
   const imp = state.session.import;
-  if (!imp) return;
+  if (!imp) return null;
   const settlement = getSettlement();
   const memberNames: Record<string, string> = {};
   for (const m of state.config.members) memberNames[m.id] = m.name;
@@ -489,14 +491,82 @@ export function saveCurrentToHistory(mode: 'add' | 'replace' = 'add'): void {
     memberNames,
     itemCount,
     snapshot: structuredClone(imp),
+    syncedAt: null,
+    sheetUrl: null,
+    syncError: null,
   };
 
   if (mode === 'replace') {
     history = history.filter((h) => h.periodLabel !== imp.periodLabel);
   }
   history = [entry, ...history];
+  state.session.loadedHistoryId = entry.id;
   persistHistory();
   notify();
+  return entry.id;
+}
+
+/** 시트 URL(열기 링크). */
+export function sheetUrlOf(spreadsheetId: string): string {
+  return 'https://docs.google.com/spreadsheets/d/' + spreadsheetId;
+}
+
+const syncingIds = new Set<string>();
+/** 해당 기록이 시트 동기화 진행 중인지(UI 인플라이트 표시용). */
+export function isSyncing(id: string): boolean {
+  return syncingIds.has(id);
+}
+
+/** 한 기록을 구글 시트에 동기화하고 성공/실패 상태를 기록. 실패 시 throw. */
+export async function syncEntry(id: string): Promise<void> {
+  const e = history.find((h) => h.id === id);
+  const gdrive = state.config.gdrive;
+  if (!e || !e.snapshot || !gdrive) return;
+  syncingIds.add(id);
+  notify();
+  try {
+    const sid = await pushEntry(gdrive.folderId, e, state.config.members);
+    syncingIds.delete(id);
+    const i = history.findIndex((h) => h.id === id);
+    if (i >= 0) {
+      history[i] = { ...history[i], syncedAt: Date.now(), sheetUrl: sheetUrlOf(sid), syncError: null };
+      persistHistory();
+    }
+    notify();
+  } catch (err) {
+    syncingIds.delete(id);
+    const i = history.findIndex((h) => h.id === id);
+    if (i >= 0) {
+      history[i] = { ...history[i], syncError: err instanceof Error ? err.message : String(err) };
+      persistHistory();
+    }
+    notify();
+    throw err;
+  }
+}
+
+/** 폴더 선택 → 시트 기록 자동 불러오기 → 연결 저장. 취소 시 null. */
+export async function connectGoogle(): Promise<{
+  folderName: string;
+  added: number;
+  updated: number;
+} | null> {
+  const folder = await pickFolder();
+  if (!folder) return null;
+  let added = 0;
+  let updated = 0;
+  try {
+    const pulled = await pullAll(folder.id);
+    if (pulled.length) {
+      const r = mergeHistoryEntries(pulled);
+      added = r.added;
+      updated = r.updated;
+    }
+  } catch {
+    /* 자동 불러오기 실패는 연결을 막지 않음 */
+  }
+  setConfig({ gdrive: { folderId: folder.id, folderName: folder.name } });
+  return { folderName: folder.name, added, updated };
 }
 
 export function findHistoryByPeriod(label: string): HistoryEntry | null {

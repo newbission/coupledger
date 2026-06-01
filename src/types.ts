@@ -132,6 +132,12 @@ export interface HistoryEntry {
   itemCount: number;
   /** 전체 데이터 스냅샷 — 불러오기(복원)용 */
   snapshot: ImportResult;
+  /** 구글 시트 동기화: 마지막 성공 시각(ms). 없으면 미동기화 */
+  syncedAt?: number | null;
+  /** 동기화된 시트 URL(열기 링크용) */
+  sheetUrl?: string | null;
+  /** 마지막 동기화 실패 메시지(있으면 실패 상태) */
+  syncError?: string | null;
 }
 
 export interface Session {
