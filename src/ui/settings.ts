@@ -27,14 +27,7 @@ import {
   importBackupJSON,
   resetAll,
 } from '../state/store';
-import {
-  requestToken,
-  pickFolder,
-  findOrCreateSheetInFolder,
-  ensureTab,
-  writeRange,
-} from '../integrations/google';
-import { GOOGLE_API_KEY } from '../integrations/google-config';
+import { pickFolder, listFolderSheets, disconnect } from '../integrations/google';
 
 // 멤버 색 슬롯(테마 팔레트 m1..m6).
 const COLOR_SLOTS = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'] as const;
@@ -531,66 +524,159 @@ function dataSection(): HTMLElement {
 // ---------- 6) 구글시트 연결 (베타) ----------
 
 function googleSection(): HTMLElement {
-  const statusEl = el('span', { class: 'muted', style: { fontSize: '12px' } }, '');
-
-  const testBtn = el(
-    'button',
-    {
-      class: 'btn btn-ghost',
-      type: 'button',
-      onClick: async () => {
-        try {
-          statusEl.textContent = '구글 로그인 중…';
-          await requestToken(true);
-          statusEl.textContent = '폴더를 선택하세요…';
-          const folder = await pickFolder();
-          if (!folder) {
-            statusEl.textContent = '폴더 선택을 취소했어요.';
-            return;
-          }
-          const year = String(new Date().getFullYear());
-          statusEl.textContent = `'${folder.name}'에 ${year} 시트 준비 중…`;
-          const id = await findOrCreateSheetInFolder(folder.id, year);
-          await ensureTab(id, '연결테스트');
-          await writeRange(id, "'연결테스트'!A1", [
-            ['coupledger 연결 성공', new Date().toLocaleString('ko-KR')],
-          ]);
-          statusEl.textContent = `성공! '${folder.name} / ${year}' 시트에 기록했어요.`;
-          toast('구글시트 연결 성공');
-          window.open('https://docs.google.com/spreadsheets/d/' + id, '_blank');
-        } catch (e) {
-          statusEl.textContent = '실패: ' + (e instanceof Error ? e.message : String(e));
-          toast('연결 실패 — 상태 메시지를 확인하세요', 'info');
-        }
-      },
-    },
-    svg(15, '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/>'),
-    '로그인 + 폴더 선택 + 연결 테스트',
-  );
-
-  return el(
+  const conn = getState().config.gdrive ?? null;
+  const group = el(
     'div',
     { class: 'settings-group' },
     el('h3', null, '구글시트 연결 ', el('span', { class: 'badge', text: '베타' })),
+  );
+
+  const sheetIcon = (n: number) =>
+    svg(n, '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/>');
+
+  // ----- 미연결: 폴더 선택으로 연결 -----
+  if (!conn) {
+    const status = el('span', { class: 'muted', style: { fontSize: '12px' } }, '');
+    const connectBtn = el(
+      'button',
+      {
+        class: 'btn btn-primary',
+        type: 'button',
+        onClick: async () => {
+          try {
+            status.textContent = '구글 로그인·폴더 선택 중…';
+            const folder = await pickFolder(); // 토큰은 내부에서 처리(첫 연결만 동의 팝업)
+            if (!folder) {
+              status.textContent = '폴더 선택을 취소했어요.';
+              return;
+            }
+            setConfig({ gdrive: { folderId: folder.id, folderName: folder.name } });
+            toast('구글 연결됨 · ' + folder.name);
+          } catch (e) {
+            status.textContent = '실패: ' + (e instanceof Error ? e.message : String(e));
+            toast('연결 실패 — 상태 메시지 확인', 'info');
+          }
+        },
+      },
+      sheetIcon(15),
+      '구글 연결 (폴더 선택)',
+    );
+    group.append(
+      el(
+        'p',
+        { class: 'muted', style: { fontSize: '11.5px', fontWeight: '600', margin: '0 0 12px' } },
+        '둘이 같은 폴더를 공유해 기록을 함께 봐요. 로그인 후 저장할 폴더를 고르면 됩니다.',
+      ),
+      el(
+        'div',
+        { class: 'row', style: { gap: '10px', alignItems: 'center', flexWrap: 'wrap' } },
+        connectBtn,
+        status,
+      ),
+    );
+    return group;
+  }
+
+  // ----- 연결됨: 폴더 + 시트 목록 + 변경/해제 -----
+  const folderLink = 'https://drive.google.com/drive/folders/' + conn.folderId;
+
+  const sheetList = el(
+    'div',
+    { style: { margin: '14px 0 0', fontSize: '12.5px' } },
+    el('span', { class: 'muted', text: '시트 목록 불러오는 중…' }),
+  );
+  listFolderSheets(conn.folderId)
+    .then((sheets) => {
+      sheetList.replaceChildren();
+      if (!sheets.length) {
+        sheetList.append(
+          el('span', { class: 'muted', text: '이 폴더에 아직 시트가 없어요. 정산을 저장하면 연도 시트가 생겨요.' }),
+        );
+        return;
+      }
+      sheetList.append(
+        el('div', { class: 'muted', style: { marginBottom: '8px', fontWeight: '700' }, text: `시트 ${sheets.length}개` }),
+      );
+      const wrap = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } });
+      for (const s of sheets.slice().sort((a, b) => b.name.localeCompare(a.name))) {
+        wrap.append(
+          el(
+            'a',
+            {
+              href: 'https://docs.google.com/spreadsheets/d/' + s.id,
+              target: '_blank',
+              class: 'pill',
+              style: { textDecoration: 'none', display: 'inline-flex', gap: '6px', alignItems: 'center' },
+            },
+            sheetIcon(13),
+            el('span', { text: s.name }),
+            el('span', { class: 'muted', text: '↗' }),
+          ),
+        );
+      }
+      sheetList.append(wrap);
+    })
+    .catch((e) => {
+      sheetList.replaceChildren(
+        el('span', { class: 'muted', text: '시트 목록을 못 불러왔어요: ' + (e instanceof Error ? e.message : '') }),
+      );
+    });
+
+  const changeBtn = el(
+    'button',
+    {
+      class: 'btn btn-ghost btn-sm',
+      type: 'button',
+      onClick: async () => {
+        try {
+          const f = await pickFolder();
+          if (f) {
+            setConfig({ gdrive: { folderId: f.id, folderName: f.name } });
+            toast('폴더 변경됨 · ' + f.name);
+          }
+        } catch (e) {
+          toast('실패: ' + (e instanceof Error ? e.message : ''), 'info');
+        }
+      },
+    },
+    '폴더 변경',
+  );
+  const disconnectBtn = el(
+    'button',
+    {
+      class: 'btn btn-ghost btn-sm',
+      type: 'button',
+      style: { color: 'var(--danger)' },
+      onClick: () => {
+        setConfig({ gdrive: null });
+        disconnect();
+        toast('연결 해제됨');
+      },
+    },
+    '연결 해제',
+  );
+
+  group.append(
     el(
       'p',
       { class: 'muted', style: { fontSize: '11.5px', fontWeight: '600', margin: '0 0 12px' } },
-      '둘이 같은 시트를 공유해 기록을 함께 봐요. 먼저 로그인·시트 생성이 되는지 테스트합니다.',
+      '연결됨 — 매번 다시 로그인할 필요 없어요. 정산을 저장하면 이 폴더의 연도 시트에 기록돼요.',
     ),
     el(
       'div',
       { class: 'row', style: { gap: '10px', alignItems: 'center', flexWrap: 'wrap' } },
-      testBtn,
-      statusEl,
+      el(
+        'a',
+        { href: folderLink, target: '_blank', class: 'pill pill-accent', style: { textDecoration: 'none' } },
+        '📁 ' + conn.folderName + ' ↗',
+      ),
+      changeBtn,
+      el('div', { class: 'spacer' }),
+      disconnectBtn,
     ),
-    el(
-      'p',
-      { class: 'muted', style: { fontSize: '11px', margin: '10px 0 0' } },
-      GOOGLE_API_KEY
-        ? '폴더 선택(Picker) 준비됨 — 연/월 자동정리·동기화를 붙입니다.'
-        : '※ 폴더 선택(Picker)·자동 동기화는 API 키 등록 후 활성화됩니다.',
-    ),
+    sheetList,
   );
+  return group;
 }
 
 // ---------- 페이지 ----------

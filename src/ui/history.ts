@@ -138,28 +138,37 @@ function card(
   // 전월 대비 추세(카드총청구 기준).
   const trend = prev ? trendEl(e.cardTotalNet, prev.cardTotalNet) : null;
 
+  // 자세히보기/접기 토글 라인(썸네일 하단).
+  const detailToggle = el('div', {
+    class: 'small muted',
+    style: { marginTop: '9px', fontWeight: '700', cursor: 'pointer' },
+    text: '자세히보기 ▾',
+  });
+
   const c = el(
     'button',
     {
       class: 'history-card' + (isCurrent ? ' is-current' : ' is-placeholder'),
       type: 'button',
       style: { textAlign: 'left', display: 'block', width: '100%' },
-      title: '클릭하면 최신 기록과 비교해요',
+      title: '자세히보기',
       onClick: () => {
-        comparedId = comparedId === e.id ? null : e.id;
-        // 모듈 로컬 상태 변경 → 다음 store notify 없이도 즉시 반영되도록 직접 재렌더 트리거 대신
-        // 현재 카드 영역만 토글(비교 패널 append/remove).
-        toggleCompare(c, e, latest);
+        const expanded = toggleCompare(c, e, latest);
+        detailToggle.textContent = expanded ? '접기 ▴' : '자세히보기 ▾';
       },
     },
     mo,
     big,
     small,
     trend,
+    detailToggle,
   );
 
   // 초기 펼침 상태 복원.
-  if (comparedId === e.id) toggleCompare(c, e, latest);
+  if (comparedId === e.id) {
+    toggleCompare(c, e, latest);
+    detailToggle.textContent = '접기 ▴';
+  }
 
   return c;
 }
@@ -186,15 +195,16 @@ function trendEl(cur: number, prev: number): HTMLElement | null {
 }
 
 /** 카드 내부에 비교 패널 토글(append/remove). latest와의 카드총청구 막대 비교. */
-function toggleCompare(host: HTMLElement, e: HistoryEntry, latest: HistoryEntry): void {
+function toggleCompare(host: HTMLElement, e: HistoryEntry, latest: HistoryEntry): boolean {
   const existing = host.querySelector('[data-compare]');
   if (existing) {
     existing.remove();
     if (comparedId === e.id) comparedId = null;
-    return;
+    return false;
   }
   comparedId = e.id;
   host.append(comparePanel(e, latest));
+  return true;
 }
 
 /** 비교 패널: 이 기록 vs 최신 기록의 카드총청구 + 공용/개인 비율 막대. */

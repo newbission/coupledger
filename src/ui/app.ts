@@ -24,25 +24,78 @@ function onboardingView(): HTMLElement {
   return el('div', { class: 'app' }, el('div', { class: 'container' }, Onboarding()));
 }
 
-/** 메인 화면: 헤더 + 정산바(sticky) + 업로드 + (import 있으면 거래/요약) + 기록. */
+/** 접기 상태 기억(재렌더 사이 유지). true=펼침. */
+const collapseState = new Map<string, boolean>();
+
+/** 컴포넌트 섹션(.sec-head 보유)을 접기 가능하게 감싼다(컴포넌트 수정 없이). 헤더 클릭=토글. */
+function collapsible(section: HTMLElement, key: string, defaultOpen: boolean): HTMLElement {
+  const head = section.querySelector(':scope > .sec-head') as HTMLElement | null;
+  if (!head) return section;
+  if (!collapseState.has(key)) collapseState.set(key, defaultOpen);
+
+  // .sec-head 외 자식들을 body 로 이동 → 토글 대상.
+  const body = el('div', {});
+  for (const n of Array.from(section.childNodes)) {
+    if (n !== head) body.append(n);
+  }
+  section.append(body);
+
+  // 헤더를 토글로.
+  Object.assign(head.style, {
+    cursor: 'pointer',
+    userSelect: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  });
+  const chev = el('span', { text: '▾' });
+  Object.assign(chev.style, {
+    marginLeft: 'auto',
+    fontSize: '14px',
+    color: 'var(--sub)',
+    transition: 'transform .15s',
+  });
+  head.append(chev);
+
+  const apply = () => {
+    const open = collapseState.get(key)!;
+    body.style.display = open ? '' : 'none';
+    chev.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+  };
+  apply();
+  head.addEventListener('click', () => {
+    collapseState.set(key, !collapseState.get(key));
+    apply();
+  });
+  return section;
+}
+
+/** 메인 화면: 헤더 + 정산바(sticky) + 업로드 + 요약(접기,위) + 거래내역(아래).
+ *  지난 기록: 넓은 화면이면 우측 플로팅 섬(스크롤 따라옴), 좁으면 본문 위 접기. */
 function mainView(): HTMLElement {
   const hasImport = getState().session.import != null;
+  const wide = window.innerWidth >= 1440;
 
-  const container = el(
-    'div',
-    { class: 'container' },
-    Header(),
-    SettlementBar(),
-    Upload(),
-  );
+  const container = el('div', { class: 'container' }, Header());
 
-  if (hasImport) {
-    container.append(TransactionList(), SettlementSummary());
+  // 좁은 화면: 지난 기록을 멤버 밑(상단)에 접힌 채로 — 바꾸려고 스크롤 안 해도 됨.
+  if (!wide) {
+    container.append(collapsible(History(), 'history', false));
   }
 
-  container.append(History());
+  container.append(SettlementBar(), Upload());
 
-  return el('div', { class: 'app' }, container);
+  if (hasImport) {
+    container.append(collapsible(SettlementSummary(), 'summary', true));
+    container.append(TransactionList());
+  }
+
+  const root = el('div', { class: 'app' }, container);
+  // 넓은 화면: 지난 기록을 우측 플로팅 섬으로(스크롤 따라옴).
+  if (wide) {
+    root.append(el('div', { class: 'float-history' }, collapsible(History(), 'history', true)));
+  }
+  return root;
 }
 
 /** 상태에 맞는 화면을 host 에 mount. window.scrollY 보존. */

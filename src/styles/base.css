@@ -696,3 +696,22 @@ a { color: inherit; text-decoration: none; }
   .txn-row .txn-date { display: inline-block; }
   .split-panel { padding: 8px 0 2px; }
 }
+
+/* 지난 기록 — 넓은 화면에서 우측 플로팅 섬(스크롤 따라옴) */
+.float-history {
+  position: fixed;
+  right: 20px;
+  top: 84px;
+  width: 308px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  z-index: 40;
+}
+.float-history > .section {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 16px 18px;
+}

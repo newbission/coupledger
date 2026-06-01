@@ -161,6 +161,7 @@ function mergeByApproval(raws: RawTxn[]): LineItem[] {
       id: uid(),
       date: rep.date,
       merchant: rep.merchant,
+      approvalNo: rep.approvalNo || undefined,
       gross,
       canceledAmount,
       net,

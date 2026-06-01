@@ -234,17 +234,59 @@ export function learn(
 
 // ---------- import 세션 ----------
 
+interface PriorClass {
+  assign: Assignment;
+  category: string | null;
+  categoryAuto: boolean;
+  splits: Split[] | null;
+  excluded: boolean;
+}
+
+/** 이전에 '분류된' 거래를 승인번호 → 분류로 모음(저장 기록 스냅샷 + 현재 세션). 최근 것이 우선. */
+function priorClassifications(): Map<string, PriorClass> {
+  const map = new Map<string, PriorClass>();
+  const meaningful = (it: LineItem): boolean =>
+    it.category != null ||
+    it.assign !== 'shared' ||
+    (it.splits != null && it.splits.length > 0) ||
+    (it.excluded && it.cancel !== 'full');
+  const add = (items: LineItem[]) => {
+    for (const it of items) {
+      if (!it.approvalNo || !meaningful(it)) continue;
+      map.set(it.approvalNo, {
+        assign: it.assign,
+        category: it.category,
+        categoryAuto: it.categoryAuto,
+        splits: it.splits,
+        excluded: it.excluded,
+      });
+    }
+  };
+  for (const h of history) if (h.snapshot) add(h.snapshot.items); // 오래된 것 먼저
+  if (state.session.import) add(state.session.import.items); // 최근(세션)이 덮어씀
+  return map;
+}
+
 export function setImport(r: ImportResult | null): void {
   if (r) {
-    // 각 item에 자동 제안 적용(아직 사용자 확정 전).
+    const prior = priorClassifications();
     for (const item of r.items) {
-      const s = suggestFor(item.merchant);
-      if (s.category != null && item.category == null) {
-        item.category = s.category;
-        item.categoryAuto = true;
-      }
-      if (s.assign != null) {
-        item.assign = s.assign;
+      const p = item.approvalNo ? prior.get(item.approvalNo) : undefined;
+      if (p) {
+        // 재업로드 시 기존 분류 보존(공용/개인·카테고리·분할·수동제외).
+        item.assign = p.assign;
+        item.category = p.category;
+        item.categoryAuto = p.categoryAuto;
+        item.splits = p.splits;
+        if (p.excluded) item.excluded = true;
+      } else {
+        // 새 거래 → 자동 제안.
+        const s = suggestFor(item.merchant);
+        if (s.category != null && item.category == null) {
+          item.category = s.category;
+          item.categoryAuto = true;
+        }
+        if (s.assign != null) item.assign = s.assign;
       }
     }
   }

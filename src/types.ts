@@ -39,6 +39,8 @@ export interface AppConfig {
   rules: Record<string, MerchantRule>;
   /** UI 라벨 커스터마이즈 (선택) */
   appLabel: string;
+  /** 구글 드라이브 연결(저장 폴더). 없으면 미연결 */
+  gdrive?: { folderId: string; folderName: string } | null;
 }
 
 /** 어댑터가 내보내는 원시 거래(취소행 포함, 음수 가능) */
@@ -65,6 +67,8 @@ export interface LineItem {
   id: string;
   date: string;            // YYYY-MM-DD
   merchant: string;
+  /** 카드 승인번호 — 재업로드 시 같은 거래 매칭 키(없을 수 있음) */
+  approvalNo?: string;
   gross: number;           // 원 승인금액(양수)
   canceledAmount: number;  // 취소 합계(<=0)
   net: number;             // gross + canceledAmount
