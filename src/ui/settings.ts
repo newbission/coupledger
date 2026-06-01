@@ -23,11 +23,13 @@ import {
   removeMember,
   updateMember,
   setPayer,
+  loadHistory,
   exportBackupJSON,
   importBackupJSON,
   resetAll,
 } from '../state/store';
 import { pickFolder, listFolderSheets, disconnect } from '../integrations/google';
+import { pushAll } from '../integrations/gsync';
 
 // 멤버 색 슬롯(테마 팔레트 m1..m6).
 const COLOR_SLOTS = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'] as const;
@@ -656,6 +658,35 @@ function googleSection(): HTMLElement {
     '연결 해제',
   );
 
+  const pushStatus = el('span', { class: 'muted', style: { fontSize: '12px' } }, '');
+  const pushBtn = el(
+    'button',
+    {
+      class: 'btn btn-primary btn-sm',
+      type: 'button',
+      onClick: async () => {
+        try {
+          const entries = loadHistory();
+          const n = entries.filter((x) => x.snapshot).length;
+          if (!n) {
+            pushStatus.textContent = '올릴 기록이 없어요(저장된 스냅샷 필요).';
+            return;
+          }
+          pushStatus.textContent = `올리는 중… 0/${n}`;
+          const done = await pushAll(conn.folderId, entries, getState().config.members, (d, t) => {
+            pushStatus.textContent = `올리는 중… ${d}/${t}`;
+          });
+          pushStatus.textContent = `완료 — ${done}개 기록을 시트에 올렸어요.`;
+          toast('시트에 올렸어요');
+        } catch (e) {
+          pushStatus.textContent = '실패: ' + (e instanceof Error ? e.message : String(e));
+          toast('올리기 실패 — 상태 메시지 확인', 'info');
+        }
+      },
+    },
+    '로컬 기록 시트로 올리기',
+  );
+
   group.append(
     el(
       'p',
@@ -673,6 +704,12 @@ function googleSection(): HTMLElement {
       changeBtn,
       el('div', { class: 'spacer' }),
       disconnectBtn,
+    ),
+    el(
+      'div',
+      { class: 'row', style: { gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px' } },
+      pushBtn,
+      pushStatus,
     ),
     sheetList,
   );

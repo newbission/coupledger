@@ -165,14 +165,74 @@ export async function listTabs(spreadsheetId: string): Promise<string[]> {
   return (r.sheets || []).map((s) => s.properties.title);
 }
 
-/** 탭 추가(이미 있으면 무시) */
-export async function ensureTab(spreadsheetId: string, title: string): Promise<void> {
-  const tabs = await listTabs(spreadsheetId);
-  if (tabs.includes(title)) return;
+export interface SheetInfo {
+  title: string;
+  sheetId: number;
+  hidden: boolean;
+}
+
+/** 모든 탭 정보(제목/시트ID/숨김) */
+export async function getSheets(spreadsheetId: string): Promise<SheetInfo[]> {
+  const r = await api<{
+    sheets?: { properties: { title: string; sheetId: number; hidden?: boolean } }[];
+  }>(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(title,sheetId,hidden)`,
+  );
+  return (r.sheets || []).map((s) => ({
+    title: s.properties.title,
+    sheetId: s.properties.sheetId,
+    hidden: !!s.properties.hidden,
+  }));
+}
+
+async function batchUpdate(spreadsheetId: string, requests: unknown[]): Promise<void> {
   await api(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
     method: 'POST',
-    body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }),
+    body: JSON.stringify({ requests }),
   });
+}
+
+/** 탭이 없으면 생성(+숨김 옵션). sheetId 반환. 이미 있으면 숨김 상태만 맞춤. */
+export async function ensureTab(
+  spreadsheetId: string,
+  title: string,
+  opts?: { hidden?: boolean },
+): Promise<number> {
+  const sheets = await getSheets(spreadsheetId);
+  const found = sheets.find((s) => s.title === title);
+  if (found) {
+    if (opts?.hidden !== undefined && found.hidden !== opts.hidden) {
+      await batchUpdate(spreadsheetId, [
+        {
+          updateSheetProperties: {
+            properties: { sheetId: found.sheetId, hidden: opts.hidden },
+            fields: 'hidden',
+          },
+        },
+      ]);
+    }
+    return found.sheetId;
+  }
+  const r = await api<{ replies?: { addSheet?: { properties: { sheetId: number } } }[] }>(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        requests: [{ addSheet: { properties: { title, hidden: opts?.hidden ?? false } } }],
+      }),
+    },
+  );
+  return r.replies?.[0]?.addSheet?.properties.sheetId ?? 0;
+}
+
+/** 탭 전체 값 비우기(잔여 행 없이 다시 쓰기 위함) */
+export async function clearTab(spreadsheetId: string, title: string): Promise<void> {
+  await api(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      title,
+    )}:clear`,
+    { method: 'POST', body: '{}' },
+  );
 }
 
 /** 범위 덮어쓰기(RAW) */
