@@ -184,57 +184,100 @@ export function exportXLSX(imp: ImportResult, members: Member[], s: SettlementRe
 const esc = (x: string): string =>
   x.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 
-/** PDF — 새 창에 브랜드 정산표를 그려 인쇄(사용자가 "PDF로 저장"). */
+const wonCompact = (n: number): string => {
+  if (Math.abs(n) >= 10000) {
+    const man = n / 10000;
+    return `${man % 1 === 0 ? man : man.toFixed(1)}만`;
+  }
+  return won(n);
+};
+
+/** PDF — 새 창에 깔끔한 정산 리포트를 그려 인쇄(사용자가 "PDF로 저장"). */
 export function exportPDF(imp: ImportResult, members: Member[], s: SettlementResult): boolean {
   const nameOf = nameMap(members);
+  const active = imp.items.filter((it) => !it.excluded);
+  const txCount = active.length;
+  const avgTx = txCount ? Math.round(s.cardTotalNet / txCount) : 0;
+  const installCount = active.filter((it) => it.installment).length;
+  const personalTotal = Object.values(s.perMemberPersonal).reduce((a, b) => a + b, 0);
+  const biggest = active.reduce<(typeof active)[number] | null>(
+    (mx, it) => (!mx || it.net > mx.net ? it : mx),
+    null,
+  );
+  const top = s.byCategoryShared[0];
 
-  const owedHtml = s.solo
-    ? `<div class="hero solo"><div class="hero-cap">이번 달 공용 합계</div><div class="hero-amt">${won(s.sharedTotal)}</div></div>`
-    : `<div class="hero">` +
-      s.owed
+  // ── 정산 결과(누가 누구에게) — 색 최소, 큰 숫자 중심 ──
+  const resultHtml = s.solo
+    ? `<div class="result"><div class="r-cap">이번 달 공용 합계</div><div class="r-amt">${won(s.sharedTotal)}</div></div>`
+    : s.owed
         .map(
-          (o) => `<div class="owe">
-            <div class="owe-flow"><span class="who pay">${esc(nameOf(o.memberId))}</span>
-              <span class="arrow">→</span>
-              <span class="who get">${esc(nameOf(s.payerId))}</span></div>
-            <div class="owe-amt">${won(o.amount)}</div>
+          (o) => `<div class="result">
+            <div class="r-flow"><b>${esc(nameOf(o.memberId))}</b><span class="ar">→</span><b>${esc(nameOf(s.payerId))}</b> 에게 보내기</div>
+            <div class="r-amt">${won(o.amount)}</div>
           </div>`,
         )
-        .join('') +
-      `</div>`;
+        .join('');
 
-  const stats = `<div class="stats">
-      <div class="stat"><div class="stat-cap">카드 총청구 (net)</div><div class="stat-val">${won(s.cardTotalNet)}</div></div>
-      <div class="stat"><div class="stat-cap">공용 합계</div><div class="stat-val accent">${won(s.sharedTotal)}</div></div>
-      <div class="stat"><div class="stat-cap">거래 건수</div><div class="stat-val">${imp.items.filter((i) => !i.excluded).length}건</div></div>
-    </div>`;
+  // ── 통계 그리드(핵심 숫자들) ──
+  const stat = (cap: string, val: string, sub?: string): string =>
+    `<div class="stat"><div class="s-cap">${cap}</div><div class="s-val">${val}</div>${sub ? `<div class="s-sub">${sub}</div>` : ''}</div>`;
+  const statsHtml = `<div class="stats">
+    ${stat('카드 총청구', won(s.cardTotalNet), `${txCount}건`)}
+    ${stat('공용 합계', won(s.sharedTotal), s.cardTotalNet ? `${Math.round((s.sharedTotal / s.cardTotalNet) * 100)}%` : '')}
+    ${stat('개인 합계', won(personalTotal), s.cardTotalNet ? `${Math.round((personalTotal / s.cardTotalNet) * 100)}%` : '')}
+    ${stat('평균 거래액', won(avgTx))}
+    ${stat('할부', `${installCount}건`)}
+    ${stat('최다 카테고리', top ? esc(top.category) : '—', top ? wonCompact(top.amount) : '')}
+  </div>`;
 
+  // ── 멤버별 분담(공용 분담 + 개인 = 보낼 금액) ──
+  const owedByMember = new Map(s.owed.map((o) => [o.memberId, o]));
+  const totalW = members.reduce((a, m) => a + (m.weight || 1), 0) || 1;
+  const memberHtml =
+    s.solo || members.length < 2
+      ? ''
+      : `<section><h2>멤버별 분담</h2><table class="tbl">
+        <thead><tr><th>멤버</th><th class="r">공용 분담</th><th class="r">개인</th><th class="r">합계</th></tr></thead>
+        <tbody>${members
+          .map((m) => {
+            const o = owedByMember.get(m.id);
+            const personal = s.perMemberPersonal[m.id] ?? 0;
+            const shared = o ? o.sharedShare : Math.round(s.sharedTotal * (m.weight || 1) / totalW);
+            const isPayer = m.id === s.payerId;
+            const total = o ? o.amount : shared + personal;
+            return `<tr>
+              <td>${esc(m.name)}${isPayer ? '<span class="pill">결제자</span>' : ''}</td>
+              <td class="r num">${won(shared)}</td>
+              <td class="r num">${won(personal)}</td>
+              <td class="r num ${isPayer ? 'muted' : 'strong'}">${isPayer ? '— 선결제' : won(total)}</td>
+            </tr>`;
+          })
+          .join('')}</tbody></table></section>`;
+
+  // ── 공용 카테고리별(미니멀 막대 — 단색 회색) ──
   const maxCat = Math.max(1, ...s.byCategoryShared.map((c) => c.amount));
-  const bars = s.byCategoryShared.length
-    ? `<h2>공용 카테고리별</h2><div class="bars">` +
-      s.byCategoryShared
-        .map(
-          (c) => `<div class="bar-row">
+  const catHtml = s.byCategoryShared.length
+    ? `<section><h2>공용 카테고리별</h2><div class="bars">${s.byCategoryShared
+        .map((c) => {
+          const pct = s.sharedTotal ? Math.round((c.amount / s.sharedTotal) * 100) : 0;
+          return `<div class="bar-row">
             <div class="bar-name">${esc(c.category)}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, (c.amount / maxCat) * 100)}%"></div></div>
-            <div class="bar-amt">${won(c.amount)}</div>
-          </div>`,
-        )
-        .join('') +
-      `</div>`
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.max(3, (c.amount / maxCat) * 100)}%"></div></div>
+            <div class="bar-amt"><b>${won(c.amount)}</b> <span class="pct">${pct}%</span></div>
+          </div>`;
+        })
+        .join('')}</div></section>`
     : '';
 
-  const txRows = imp.items
-    .filter((it) => !it.excluded)
+  // ── 거래내역(깔끔한 표, 색 없음) ──
+  const txRows = active
     .map((it) => {
-      const shared = isShared(it.assign);
-      const who = shared ? '공용' : nameOf(memberOf(it.assign) ?? '');
-      const color = shared ? '4F46E5' : memberColor(members, memberOf(it.assign) ?? '');
+      const who = isShared(it.assign) ? '공용' : nameOf(memberOf(it.assign) ?? '');
       return `<tr>
         <td class="c-date">${esc(it.date)}</td>
         <td>${esc(it.merchant)}${it.installment ? `<span class="tag">${it.installmentMonths}개월</span>` : ''}</td>
         <td class="r num">${won(it.net)}</td>
-        <td><span class="chip" style="--c:#${color}">${esc(who)}</span>${it.category ? `<span class="cat">${esc(it.category)}</span>` : ''}</td>
+        <td class="c-who">${esc(who)}${it.category ? `<span class="cat">${esc(it.category)}</span>` : ''}</td>
       </tr>`;
     })
     .join('');
@@ -242,73 +285,88 @@ export function exportPDF(imp: ImportResult, members: Member[], s: SettlementRes
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <title>${esc(imp.periodLabel)} 정산 · coupledger</title>
 <style>
-  :root{ --accent:#4F46E5; --accent-dk:#3730A3; --ink:#111827; --sub:#6b7280; --line:#eef0f4; }
+  :root{ --accent:#4F46E5; --ink:#1a1a1a; --sub:#8b8f98; --line:#e9ebef; --soft:#f6f7f9; }
   *{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  @page{ margin:14mm; }
+  @page{ margin:15mm; }
   body{ font-family:-apple-system,'Apple SD Gothic Neo','Pretendard','Malgun Gothic',sans-serif;
-        color:var(--ink); margin:0; font-size:12.5px; line-height:1.5; }
-  .wm{ font-size:22px; font-weight:800; letter-spacing:-.5px; display:flex; align-items:center; gap:1px; }
-  .wm .b{ color:#1f2937; }
-  .wm .chipx{ display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px;
-        border-radius:7px; color:#fff; font-weight:800; margin:0 1px; }
+        color:var(--ink); margin:0; font-size:12px; line-height:1.5; }
+
+  /* 헤더 — 워드마크 칩만 색 */
+  .top{ display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:12px;
+        border-bottom:1.5px solid var(--ink); margin-bottom:22px; }
+  .wm{ font-size:21px; font-weight:800; letter-spacing:-.5px; display:flex; align-items:center; }
+  .wm .b{ color:var(--ink); }
+  .wm .chipx{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
+        border-radius:7px; color:#fff; font-weight:800; }
   .wm .c1{ background:var(--accent); } .wm .c2{ background:#FB7185; margin-left:-7px; }
-  .top{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:18px; }
-  .top .meta{ text-align:right; color:var(--sub); font-size:11px; }
-  .top .period{ font-size:15px; font-weight:700; color:var(--ink); }
+  .top .meta{ text-align:right; }
+  .top .period{ font-size:15px; font-weight:700; }
+  .top .date{ color:var(--sub); font-size:10.5px; margin-top:2px; }
 
-  .hero{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
-  .owe{ flex:1; min-width:200px; background:linear-gradient(135deg,#EEF2FF,#E0E7FF); border:1px solid #C7D2FE;
-        border-radius:14px; padding:16px 18px; }
-  .owe-flow{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:6px; }
-  .who{ padding:2px 9px; border-radius:999px; background:#fff; border:1px solid #C7D2FE; }
-  .who.get{ background:var(--accent); color:#fff; border-color:var(--accent); }
-  .arrow{ color:var(--accent); font-weight:800; }
-  .owe-amt{ font-size:26px; font-weight:800; color:var(--accent-dk); letter-spacing:-.5px; }
-  .hero.solo .hero-cap{ color:var(--sub); font-size:12px; }
-  .hero.solo .hero-amt{ font-size:26px; font-weight:800; color:var(--accent-dk); }
-  .hero.solo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); border:1px solid #C7D2FE; border-radius:14px; padding:16px 18px; width:100%; }
+  /* 정산 결과 — 큰 숫자, 박스는 hairline */
+  .results{ display:flex; flex-wrap:wrap; gap:12px; margin-bottom:24px; }
+  .result{ flex:1; min-width:210px; border:1px solid var(--line); border-left:3px solid var(--accent);
+        border-radius:10px; padding:14px 16px; }
+  .r-cap,.r-flow{ font-size:12px; color:#555; margin-bottom:6px; }
+  .r-flow b{ color:var(--ink); } .r-flow .ar{ color:var(--accent); font-weight:800; margin:0 6px; }
+  .r-amt{ font-size:27px; font-weight:800; letter-spacing:-.6px; }
 
-  .stats{ display:flex; gap:10px; margin-bottom:22px; }
-  .stat{ flex:1; border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:#fafbfc; }
-  .stat-cap{ color:var(--sub); font-size:11px; margin-bottom:3px; }
-  .stat-val{ font-size:17px; font-weight:700; letter-spacing:-.3px; }
-  .stat-val.accent{ color:var(--accent-dk); }
+  /* 통계 그리드 */
+  .stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:0; border:1px solid var(--line);
+        border-radius:10px; overflow:hidden; margin-bottom:26px; }
+  .stat{ padding:13px 15px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .stat:nth-child(3n){ border-right:0; } .stat:nth-child(n+4){ border-bottom:0; }
+  .s-cap{ color:var(--sub); font-size:10.5px; margin-bottom:4px; }
+  .s-val{ font-size:16px; font-weight:700; letter-spacing:-.3px; }
+  .s-sub{ color:var(--sub); font-size:10.5px; margin-top:1px; }
 
-  h2{ font-size:12px; font-weight:700; color:var(--sub); text-transform:none; margin:0 0 9px; letter-spacing:.2px; }
-  .bars{ display:flex; flex-direction:column; gap:7px; margin-bottom:22px; }
-  .bar-row{ display:grid; grid-template-columns:96px 1fr 96px; align-items:center; gap:10px; }
-  .bar-name{ font-size:11.5px; color:#374151; }
-  .bar-track{ height:9px; background:#EEF2FF; border-radius:999px; overflow:hidden; }
-  .bar-fill{ height:100%; background:linear-gradient(90deg,#818CF8,#4F46E5); border-radius:999px; }
-  .bar-amt{ text-align:right; font-size:11.5px; font-variant-numeric:tabular-nums; color:var(--ink); }
+  section{ margin-bottom:26px; break-inside:avoid; }
+  h2{ font-size:11px; font-weight:700; color:var(--sub); margin:0 0 10px; padding-bottom:5px;
+        border-bottom:1px solid var(--line); letter-spacing:.3px; }
 
-  table{ width:100%; border-collapse:collapse; font-size:11.5px; }
-  thead th{ background:var(--accent); color:#fff; font-weight:700; padding:8px 9px; text-align:left; }
-  thead th:first-child{ border-radius:8px 0 0 8px; } thead th:last-child{ border-radius:0 8px 8px 0; text-align:right; }
+  /* 막대 — 단색 회색(색 떡칠 X) */
+  .bars{ display:flex; flex-direction:column; gap:8px; }
+  .bar-row{ display:grid; grid-template-columns:110px 1fr 130px; align-items:center; gap:12px; }
+  .bar-name{ font-size:11.5px; color:#444; }
+  .bar-track{ height:7px; background:var(--soft); border-radius:999px; overflow:hidden; }
+  .bar-fill{ height:100%; background:#9aa0aa; border-radius:999px; }
+  .bar-amt{ text-align:right; font-size:11.5px; font-variant-numeric:tabular-nums; }
+  .bar-amt .pct{ color:var(--sub); margin-left:5px; }
+
+  /* 표 공통 */
+  .tbl, table.tx{ width:100%; border-collapse:collapse; font-size:11.5px; }
+  thead th{ text-align:left; color:var(--sub); font-weight:700; font-size:10.5px; padding:6px 9px;
+        border-bottom:1.5px solid var(--ink); }
   tbody td{ padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  tbody tr:nth-child(even){ background:#fafbfc; }
+  .r{ text-align:right; } .num{ font-variant-numeric:tabular-nums; }
+  .strong{ font-weight:700; } .muted{ color:var(--sub); }
+  .pill{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:5px; background:var(--soft);
+        color:#777; font-size:9.5px; font-weight:600; }
   .c-date{ color:var(--sub); white-space:nowrap; font-variant-numeric:tabular-nums; }
-  .num{ font-variant-numeric:tabular-nums; font-weight:600; }
-  td.r{ text-align:right; }
-  .chip{ display:inline-block; padding:1.5px 8px; border-radius:999px; font-size:10.5px; font-weight:700;
-        color:var(--c); background:color-mix(in srgb, var(--c) 12%, #fff); border:1px solid color-mix(in srgb, var(--c) 30%, #fff); }
+  .c-who{ color:#555; }
   .cat{ color:var(--sub); font-size:10.5px; margin-left:6px; }
-  .tag{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:6px; background:#F1F5F9; color:#64748B; font-size:10px; font-weight:600; }
-  tr{ break-inside:avoid; }
-  .foot{ margin-top:18px; text-align:center; color:#aab; font-size:10px; }
+  .tag{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:5px; background:var(--soft);
+        color:#777; font-size:9.5px; font-weight:600; }
+  tbody tr{ break-inside:avoid; }
+  .foot{ margin-top:8px; padding-top:10px; border-top:1px solid var(--line); text-align:center;
+        color:#b8bcc4; font-size:9.5px; }
 </style></head><body>
   <div class="top">
-    <div>
-      <div class="wm"><span class="b">coup</span><span class="chipx c1">l</span><span class="chipx c2">e</span><span class="b">dger</span></div>
-    </div>
-    <div class="meta"><div class="period">${esc(imp.periodLabel)} 정산</div>생성 ${stamp()}</div>
+    <div class="wm"><span class="b">coup</span><span class="chipx c1">l</span><span class="chipx c2">e</span><span class="b">dger</span></div>
+    <div class="meta"><div class="period">${esc(imp.periodLabel)} 정산</div><div class="date">생성 ${stamp()} · ${esc(imp.periodStart)} ~ ${esc(imp.periodEnd)}</div></div>
   </div>
-  ${owedHtml}
-  ${stats}
-  ${bars}
-  <h2>거래내역 · ${imp.items.filter((i) => !i.excluded).length}건</h2>
-  <table><thead><tr><th>일자</th><th>가맹점</th><th style="text-align:right">금액(net)</th><th>분류</th></tr></thead>
-  <tbody>${txRows}</tbody></table>
+
+  <div class="results">${resultHtml}</div>
+  ${statsHtml}
+  ${memberHtml}
+  ${catHtml}
+
+  <section>
+    <h2>거래내역 · ${txCount}건${biggest ? ` · 최대 ${won(biggest.net)} (${esc(biggest.merchant)})` : ''}</h2>
+    <table class="tx"><thead><tr><th>일자</th><th>가맹점</th><th class="r">금액(net)</th><th>분류</th></tr></thead>
+    <tbody>${txRows}</tbody></table>
+  </section>
+
   <div class="foot">coupledger — 함께 쓰는 생활비, 깔끔하게 정산</div>
 </body></html>`;
 

@@ -503,6 +503,31 @@ export function findHistoryByPeriod(label: string): HistoryEntry | null {
   return history.find((h) => h.periodLabel === label) ?? null;
 }
 
+/** 외부(시트)에서 가져온 기록을 로컬에 병합. 같은 달은 savedAt 최신본 우선(last-write-wins). */
+export function mergeHistoryEntries(
+  incoming: HistoryEntry[],
+): { added: number; updated: number; skipped: number } {
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  for (const e of incoming) {
+    const idx = history.findIndex((h) => h.periodLabel === e.periodLabel);
+    if (idx < 0) {
+      history.unshift(e);
+      added++;
+    } else if ((e.savedAt || 0) > (history[idx].savedAt || 0)) {
+      history[idx] = { ...e, id: history[idx].id }; // 로컬 id 유지
+      updated++;
+    } else {
+      skipped++;
+    }
+  }
+  history.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  persistHistory();
+  notify();
+  return { added, updated, skipped };
+}
+
 export function deleteHistory(id: string): void {
   history = history.filter((h) => h.id !== id);
   persistHistory();

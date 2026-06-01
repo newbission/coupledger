@@ -24,12 +24,13 @@ import {
   updateMember,
   setPayer,
   loadHistory,
+  mergeHistoryEntries,
   exportBackupJSON,
   importBackupJSON,
   resetAll,
 } from '../state/store';
 import { pickFolder, listFolderSheets, disconnect } from '../integrations/google';
-import { pushAll } from '../integrations/gsync';
+import { pushAll, pullAll } from '../integrations/gsync';
 
 // 멤버 색 슬롯(테마 팔레트 m1..m6).
 const COLOR_SLOTS = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'] as const;
@@ -687,6 +688,33 @@ function googleSection(): HTMLElement {
     '로컬 기록 시트로 올리기',
   );
 
+  const pullBtn = el(
+    'button',
+    {
+      class: 'btn btn-ghost btn-sm',
+      type: 'button',
+      onClick: async () => {
+        try {
+          pushStatus.textContent = '시트 읽는 중…';
+          const pulled = await pullAll(conn.folderId, (d, t) => {
+            pushStatus.textContent = `시트 읽는 중… ${d}/${t}`;
+          });
+          if (!pulled.length) {
+            pushStatus.textContent = '시트에서 찾은 기록이 없어요.';
+            return;
+          }
+          const { added, updated, skipped } = mergeHistoryEntries(pulled);
+          pushStatus.textContent = `불러옴 — 새로 ${added} · 갱신 ${updated} · 유지 ${skipped}`;
+          toast(`시트에서 ${added + updated}개 반영`);
+        } catch (e) {
+          pushStatus.textContent = '실패: ' + (e instanceof Error ? e.message : String(e));
+          toast('불러오기 실패 — 상태 메시지 확인', 'info');
+        }
+      },
+    },
+    '시트에서 불러오기',
+  );
+
   group.append(
     el(
       'p',
@@ -709,6 +737,7 @@ function googleSection(): HTMLElement {
       'div',
       { class: 'row', style: { gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px' } },
       pushBtn,
+      pullBtn,
       pushStatus,
     ),
     sheetList,

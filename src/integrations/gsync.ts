@@ -3,9 +3,27 @@
 //   · 숨김 db 탭 '_2026-05'  → 그 달 원천 데이터(불러오기의 source of truth)
 //   · 보이는 뷰 탭 '2026-05' → 사람이 보기 좋은 정산표
 // 저장 = db/뷰 탭을 clear 후 현재 상태로 다시 씀(잔여 행 없음). 다른 달은 안 건드림.
-import type { HistoryEntry, LineItem, Member, Assignment } from '../types';
-import { findOrCreateSheetInFolder, ensureTab, clearTab, writeRange } from './google';
-import { won, isShared, memberOf } from '../util';
+import type {
+  HistoryEntry,
+  LineItem,
+  Member,
+  Assignment,
+  ImportResult,
+  Split,
+  CancelKind,
+  SourceId,
+} from '../types';
+import {
+  findOrCreateSheetInFolder,
+  ensureTab,
+  clearTab,
+  writeRange,
+  getSheets,
+  readRange,
+  listFolderSheets,
+} from './google';
+import { won, isShared, memberOf, uid } from '../util';
+import { computeSettlement } from '../settlement/engine';
 
 function yearOf(period: string): string {
   return period.split('.')[0] || period.slice(0, 4);
@@ -137,4 +155,146 @@ export async function pushAll(
     onProgress?.(done, targets.length);
   }
   return done;
+}
+
+/* ─────────────────────────  PULL (시트 → 로컬 기록)  ───────────────────────── */
+
+const HIDDEN_DB = /^_\d{4}-\d{2}$/; // 숨김 db 탭 이름 패턴
+
+function parseAssign(s: string): Assignment {
+  return !s || s === 'shared' ? 'shared' : { member: s.replace(/^m:/, '') };
+}
+
+/** db 행(DB_HEADER 순서) → LineItem 복원. */
+function rowToItem(r: string[]): LineItem {
+  const g = (i: number): string => (r[i] ?? '').toString();
+  const n = (i: number): number => Number(g(i)) || 0;
+  let splits: Split[] | null = null;
+  const raw = g(12);
+  if (raw) {
+    try {
+      const p = JSON.parse(raw);
+      if (Array.isArray(p) && p.length) splits = p as Split[];
+    } catch {
+      /* 무시 */
+    }
+  }
+  return {
+    id: uid(),
+    date: g(0),
+    merchant: g(1),
+    approvalNo: g(2) || undefined,
+    gross: n(3),
+    canceledAmount: n(4),
+    net: n(5),
+    installment: g(6) === '1',
+    installmentMonths: n(7),
+    cancel: (g(8) || 'none') as CancelKind,
+    excluded: g(9) === '1',
+    category: g(10) || null,
+    categoryAuto: false, // 저장된 확정값
+    assign: parseAssign(g(11)),
+    splits,
+    manual: g(13) === '1' ? true : undefined,
+  };
+}
+
+/** 기간 라벨/항목으로 시작·끝일 추정. */
+function bounds(period: string, items: LineItem[]): { start: string; end: string } {
+  const dates = items.map((i) => i.date).filter(Boolean).sort();
+  if (dates.length) return { start: dates[0], end: dates[dates.length - 1] };
+  const [y, m] = period.split('.').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const p = (x: number): string => String(x).padStart(2, '0');
+  return { start: `${y}-${p(m)}-01`, end: `${y}-${p(m)}-${p(last)}` };
+}
+
+/** 숨김 db 탭 전체 값 → HistoryEntry 복원(멤버/정산 재계산). */
+function rowsToEntry(rows: string[][]): HistoryEntry | null {
+  let period = '';
+  let savedAt = 0;
+  let metaMembers: { id: string; name: string; isPayer: boolean; weight: number }[] = [];
+  let headerIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const key = (rows[i]?.[0] ?? '').toString();
+    if (key === '#period') period = (rows[i][1] ?? '').toString();
+    else if (key === '#savedAt') savedAt = Number(rows[i][1]) || 0;
+    else if (key === '#members') {
+      try {
+        metaMembers = JSON.parse(rows[i][1]);
+      } catch {
+        /* 무시 */
+      }
+    } else if (key === 'date') {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0 || !period) return null;
+
+  const items = rows
+    .slice(headerIdx + 1)
+    .filter((r) => r && (r[0] ?? '').toString().trim() !== '')
+    .map(rowToItem);
+
+  const members: Member[] = metaMembers.map((m) => ({
+    id: m.id,
+    name: m.name,
+    colorVar: 'm1',
+    isPayer: !!m.isPayer,
+    weight: Number(m.weight) || 1,
+  }));
+
+  const settlement = computeSettlement(items, members);
+  const memberNames: Record<string, string> = {};
+  for (const m of members) memberNames[m.id] = m.name;
+  const b = bounds(period, items);
+  const snapshot: ImportResult = {
+    source: 'samsung' as SourceId,
+    periodLabel: period,
+    periodStart: b.start,
+    periodEnd: b.end,
+    rawCount: items.length,
+    fileName: `${period} (시트)`,
+    items,
+  };
+  return {
+    id: uid(),
+    periodLabel: period,
+    source: 'samsung' as SourceId,
+    savedAt,
+    cardTotalNet: settlement.cardTotalNet,
+    settlement,
+    memberNames,
+    itemCount: items.filter((it) => !it.excluded).length,
+    snapshot,
+  };
+}
+
+/** 폴더의 모든 연도 파일에서 숨김 db 탭을 읽어 HistoryEntry[] 복원. */
+export async function pullAll(
+  folderId: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<HistoryEntry[]> {
+  const files = await listFolderSheets(folderId);
+  const tasks: { sid: string; title: string }[] = [];
+  for (const f of files) {
+    const sheets = await getSheets(f.id);
+    for (const sh of sheets) {
+      if (HIDDEN_DB.test(sh.title)) tasks.push({ sid: f.id, title: sh.title });
+    }
+  }
+  const out: HistoryEntry[] = [];
+  let done = 0;
+  for (const t of tasks) {
+    try {
+      const rows = await readRange(t.sid, `'${t.title}'`);
+      const e = rowsToEntry(rows);
+      if (e) out.push(e);
+    } catch {
+      /* 한 탭 실패는 건너뜀 */
+    }
+    onProgress?.(++done, tasks.length);
+  }
+  return out;
 }
