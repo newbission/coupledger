@@ -19,7 +19,7 @@ import type {
 import { assignKey, periodOf, uid } from '../util';
 import { computeSettlement } from '../settlement/engine';
 import { pushEntry, pullAll } from '../integrations/gsync';
-import { pickFolder, isConnected, requestToken } from '../integrations/google';
+import { pickFolder, isConnected, requestToken, disconnect } from '../integrations/google';
 
 // ---------- 상수 ----------
 
@@ -558,6 +558,17 @@ export async function syncEntry(id: string): Promise<void> {
     notify();
     throw err;
   }
+}
+
+/** 구글 로그아웃: 토큰 폐기 + 폴더 연결 해제(로컬 기록은 유지). */
+export function signOut(): void {
+  disconnect();
+  setConfig({ gdrive: null });
+}
+
+/** 연결 상태(폴더 링크 기준). */
+export function isGoogleLinked(): boolean {
+  return !!state.config.gdrive;
 }
 
 /** 만료된 토큰 재발급(사용자 제스처에서 호출) 후 동기화 재시도. */

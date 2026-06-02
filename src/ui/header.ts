@@ -3,9 +3,84 @@
 // 멤버바: 멤버 칩들(색 점 + 결제자 배지) + '+멤버' + 멤버 1명이면 '가계부 모드' 안내
 // 사용 클래스: base.css(.topbar/.topbar-left/.topbar-right/.source-pill/.pill/.gear/
 //   .memberbar/.member-chip/.member-dot/.payer-badge/.member-add/.badge/.num/.muted)
-import { el } from '../util';
-import { getState, setRoute } from '../state/store';
+import { el, toast } from '../util';
+import { getState, setRoute, connectGoogle, signOut } from '../state/store';
 import { lockupEl } from '../brand';
+
+function gSheetIcon(size = 14): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.innerHTML = '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>';
+  return svg;
+}
+
+/** 상단바 구글 상태: 연결됨이면 폴더명 칩+드롭다운(열기/관리/로그아웃), 아니면 '구글 연결'. */
+function googleControl(): HTMLElement {
+  const gdrive = getState().config.gdrive;
+  if (!gdrive) {
+    return el(
+      'button',
+      {
+        class: 'g-pill',
+        type: 'button',
+        title: '구글 시트에 자동 백업',
+        onClick: async () => {
+          try {
+            const r = await connectGoogle();
+            if (r) {
+              toast(r.added + r.updated ? `연결됨 · 기록 ${r.added + r.updated}개 불러옴` : '구글 연결됨');
+            }
+          } catch (e) {
+            toast('연결 실패: ' + (e instanceof Error ? e.message : ''), 'info');
+          }
+        },
+      },
+      gSheetIcon(13),
+      el('span', { text: '구글 연결' }),
+    );
+  }
+
+  const menu = el(
+    'div',
+    { class: 'g-menu', style: { display: 'none' } },
+    el('a', { class: 'g-menu-item', href: 'https://drive.google.com/drive/folders/' + gdrive.folderId, target: '_blank' }, '시트 폴더 열기 ↗'),
+    el('button', { class: 'g-menu-item', type: 'button', onClick: () => setRoute('settings') }, '연결 관리'),
+    el('button', { class: 'g-menu-item is-danger', type: 'button', onClick: () => { signOut(); toast('구글에서 로그아웃했어요'); } }, '로그아웃'),
+  );
+  const pill = el(
+    'button',
+    {
+      class: 'g-pill is-on',
+      type: 'button',
+      title: '구글 시트 자동 백업 · ' + gdrive.folderName,
+      onClick: (e: Event) => {
+        e.stopPropagation();
+        const open = menu.style.display === 'none';
+        menu.style.display = open ? 'block' : 'none';
+        if (open) {
+          setTimeout(() => {
+            const close = (): void => {
+              menu.style.display = 'none';
+              document.removeEventListener('click', close);
+            };
+            document.addEventListener('click', close);
+          }, 0);
+        }
+      },
+    },
+    el('span', { class: 'g-dot' }),
+    el('span', { class: 'g-name', text: gdrive.folderName }),
+    el('span', { class: 'muted', text: '▾' }),
+  );
+  return el('div', { class: 'g-wrap' }, pill, menu);
+}
 
 /** 소스 ID → 표시 라벨 (현재 삼성카드만 지원) */
 const SOURCE_LABEL: Record<string, string> = {
@@ -59,7 +134,7 @@ export function Header(): HTMLElement {
     gearIcon(),
   );
 
-  const right = el('div', { class: 'topbar-right' }, periodPill, sourcePill, gear);
+  const right = el('div', { class: 'topbar-right' }, periodPill, sourcePill, googleControl(), gear);
 
   const topbar = el('header', { class: 'topbar' }, left, right);
 
