@@ -32,6 +32,23 @@ let tokenClient: TokenClient | null = null;
 let accessToken: string | null = null;
 let tokenExpiry = 0;
 
+// 만료 5분 전 자동 무팝업 갱신 — 탭이 열려 있는 동안 로그인 유지(서버 없이).
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleRefresh(): void {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  if (!accessToken) return;
+  const ms = tokenExpiry - Date.now() - 5 * 60 * 1000;
+  if (ms <= 0) return;
+  refreshTimer = setTimeout(() => {
+    requestToken(false).catch(() => {
+      /* 조용히 실패하면 만료 시 헤더에 '로그인 필요' 표시 */
+    });
+  }, ms);
+}
+
 // 액세스 토큰을 localStorage에 저장(약 1시간) → 새로고침/설정 재진입 시 재로그인 방지.
 const TOKEN_KEY = 'coupledger.gtoken.v1';
 function persistToken(): void {
@@ -51,6 +68,7 @@ function persistToken(): void {
       if (o.token && typeof o.exp === 'number' && o.exp > Date.now()) {
         accessToken = o.token;
         tokenExpiry = o.exp;
+        scheduleRefresh();
       }
     }
   } catch {
@@ -99,6 +117,7 @@ export async function requestToken(interactive = true): Promise<string> {
       accessToken = resp.access_token;
       tokenExpiry = Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000;
       persistToken();
+      scheduleRefresh();
       resolve(accessToken);
     };
     tokenClient!.requestAccessToken({ prompt: interactive ? 'consent' : '' });
@@ -118,7 +137,25 @@ export function isConnected(): boolean {
   return !!accessToken && Date.now() < tokenExpiry;
 }
 
+/** 앱 시작 시 조용히 토큰 확보(팝업 없이). 성공 true. 실패해도 팝업 안 띄움 → 헤더에서 1클릭 재연결. */
+export async function warmAuth(): Promise<boolean> {
+  if (accessToken && Date.now() < tokenExpiry) {
+    scheduleRefresh();
+    return true;
+  }
+  try {
+    await requestToken(false); // prompt:'' — 무팝업 시도(차단되면 throw)
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function disconnect(): void {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
   if (accessToken) window.google?.accounts?.oauth2.revoke(accessToken);
   accessToken = null;
   tokenExpiry = 0;

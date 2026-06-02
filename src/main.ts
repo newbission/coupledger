@@ -3,7 +3,7 @@
 import './styles/tokens.css';
 import './styles/base.css';
 
-import { subscribe } from './state/store';
+import { subscribe, warmGoogleAuth } from './state/store';
 import { renderRoot } from './ui/app';
 
 const host = document.getElementById('app');
@@ -20,3 +20,6 @@ subscribe(render);
 
 // 최초 1회 렌더.
 render();
+
+// 연결돼 있으면 조용히 토큰 확보(팝업 없이) — 성공하면 헤더가 갱신됨.
+void warmGoogleAuth();

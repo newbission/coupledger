@@ -19,7 +19,7 @@ import type {
 import { assignKey, periodOf, uid } from '../util';
 import { computeSettlement } from '../settlement/engine';
 import { pushEntry, pullAll } from '../integrations/gsync';
-import { pickFolder, isConnected, requestToken, disconnect } from '../integrations/google';
+import { pickFolder, isConnected, requestToken, disconnect, warmAuth } from '../integrations/google';
 
 // ---------- 상수 ----------
 
@@ -564,6 +564,24 @@ export async function syncEntry(id: string): Promise<void> {
 export function signOut(): void {
   disconnect();
   setConfig({ gdrive: null });
+}
+
+/** 앱 시작 시 연결돼 있으면 조용히 토큰 확보(팝업 없이) 후 재렌더. */
+export async function warmGoogleAuth(): Promise<void> {
+  if (!state.config.gdrive) return;
+  await warmAuth();
+  notify();
+}
+
+/** 헤더 '로그인 필요' → 제스처로 재인증 후 재렌더. */
+export async function reconnectToken(): Promise<void> {
+  await requestToken(true);
+  notify();
+}
+
+/** 폴더는 연결됐지만 토큰이 만료됐는지(헤더 '로그인 필요' 표시용). */
+export function needsReauth(): boolean {
+  return !!state.config.gdrive && !isConnected();
 }
 
 /** 연결 상태(폴더 링크 기준). */

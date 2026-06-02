@@ -616,6 +616,8 @@ a { color: inherit; text-decoration: none; }
 }
 .g-pill:hover { border-color: var(--accent); color: var(--accent-deep); }
 .g-pill.is-on { color: var(--ink); }
+.g-pill.is-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.g-pill.is-warn svg { color: var(--warn); }
 .g-pill svg { color: var(--accent-deep); }
 .g-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--ok);

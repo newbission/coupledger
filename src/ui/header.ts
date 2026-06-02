@@ -4,7 +4,7 @@
 // 사용 클래스: base.css(.topbar/.topbar-left/.topbar-right/.source-pill/.pill/.gear/
 //   .memberbar/.member-chip/.member-dot/.payer-badge/.member-add/.badge/.num/.muted)
 import { el, toast } from '../util';
-import { getState, setRoute, connectGoogle, signOut } from '../state/store';
+import { getState, setRoute, connectGoogle, signOut, reconnectToken, needsReauth } from '../state/store';
 import { lockupEl } from '../brand';
 
 function gSheetIcon(size = 14): SVGElement {
@@ -24,6 +24,27 @@ function gSheetIcon(size = 14): SVGElement {
 /** 상단바 구글 상태: 연결됨이면 폴더명 칩+드롭다운(열기/관리/로그아웃), 아니면 '구글 연결'. */
 function googleControl(): HTMLElement {
   const gdrive = getState().config.gdrive;
+  if (gdrive && needsReauth()) {
+    // 폴더는 연결됐지만 토큰 만료 → 1클릭 재로그인.
+    return el(
+      'button',
+      {
+        class: 'g-pill is-warn',
+        type: 'button',
+        title: '구글 로그인이 만료됐어요 · 눌러서 다시 로그인',
+        onClick: async () => {
+          try {
+            await reconnectToken();
+            toast('다시 로그인됐어요');
+          } catch (e) {
+            toast('로그인 실패: ' + (e instanceof Error ? e.message : ''), 'info');
+          }
+        },
+      },
+      gSheetIcon(13),
+      el('span', { text: '로그인 필요' }),
+    );
+  }
   if (!gdrive) {
     return el(
       'button',
